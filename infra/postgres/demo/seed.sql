@@ -1,0 +1,21 @@
+\set ON_ERROR_STOP on
+
+BEGIN;
+INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
+VALUES ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000001','HQ','Fictional Company HQ','2026-04-01')
+ON CONFLICT DO NOTHING;
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000002','person','Demo Operations User')
+ON CONFLICT DO NOTHING;
+INSERT INTO workforce.employments
+  (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+VALUES
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000003',
+   '10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','2026-04-01',2400,'active')
+ON CONFLICT DO NOTHING;
+INSERT INTO finance.accounts (tenant_id,id,code,name,account_type,active_from)
+VALUES
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000004','1000','Cash','asset','2026-04-01'),
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000005','6000','Operating Expense','expense','2026-04-01')
+ON CONFLICT DO NOTHING;
+COMMIT;

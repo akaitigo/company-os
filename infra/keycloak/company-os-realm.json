@@ -68,7 +68,6 @@
       { "name": "procurement-approver" },
       { "name": "payment-preparer" },
       { "name": "payment-approver" },
-      { "name": "finance-accountant" },
       { "name": "finance-controller" }
     ]
   }

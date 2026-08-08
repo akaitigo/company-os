@@ -29,3 +29,18 @@ test('public console has no serious accessibility violations', async ({ page }) 
     ),
   ).toEqual([]);
 });
+
+test('authenticated administrator creates an audited organization command', async ({ page }) => {
+  const password = process.env['E2E_USER_PASSWORD'];
+  expect(password).toBeTruthy();
+  await page.goto('/auth/login');
+  await page.getByRole('textbox', { name: 'Username or email' }).fill('e2e-user');
+  await page.getByRole('textbox', { name: 'Password' }).fill(password ?? '');
+  await page.getByRole('button', { name: 'Sign In' }).click();
+  await expect(page.getByRole('heading', { level: 2, name: '組織単位' })).toBeVisible();
+  await page.getByLabel('コード').fill(`E2E_${Date.now().toString()}`);
+  await page.getByLabel('名称').fill('E2E 統制部門');
+  await page.getByLabel('適用開始日').fill('2026-08-09');
+  await page.getByRole('button', { name: '作成' }).click();
+  await expect(page.getByRole('status')).toContainText('組織単位を作成しました');
+});

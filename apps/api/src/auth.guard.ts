@@ -37,7 +37,11 @@ export class AuthGuard implements CanActivate {
         requestId,
       );
       return true;
-    } catch {
+    } catch (error) {
+      console.error(
+        'OIDC bearer verification failed',
+        error instanceof Error ? error.message : 'unknown error',
+      );
       throw new UnauthorizedException('Authentication failed');
     }
   }

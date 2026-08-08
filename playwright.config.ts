@@ -8,16 +8,24 @@ export default defineConfig({
   retries: process.env['CI'] === undefined ? 0 : 1,
   reporter: process.env['CI'] === undefined ? 'list' : [['github'], ['html', { open: 'never' }]],
   use: {
-    baseURL: 'http://127.0.0.1:3000',
+    baseURL: 'http://localhost:3000',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
-    command: 'pnpm --filter @company-os/web dev',
-    url: 'http://127.0.0.1:3000',
-    reuseExistingServer: false,
-    timeout: 60_000,
-  },
+  webServer: [
+    {
+      command: 'pnpm --filter @company-os/api dev',
+      url: 'http://127.0.0.1:3001/health/live',
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+    {
+      command: 'pnpm --filter @company-os/web dev',
+      url: 'http://127.0.0.1:3000',
+      reuseExistingServer: false,
+      timeout: 60_000,
+    },
+  ],
 });

@@ -14,7 +14,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const authRequest = await unseal<AuthRequest>(encrypted);
     const config = await configuration();
-    const tokens = await oidc.authorizationCodeGrant(config, request.nextUrl, {
+    const tokens = await oidc.authorizationCodeGrant(config, new URL(request.url), {
       pkceCodeVerifier: authRequest.verifier,
       expectedState: authRequest.state,
     });
@@ -33,7 +33,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       },
     );
     return response;
-  } catch {
+  } catch (error) {
+    console.error('OIDC callback failed', error instanceof Error ? error.message : 'unknown error');
     jar.delete('company_os_auth_request');
     return NextResponse.json({ error: 'Authentication failed' }, { status: 401 });
   }
