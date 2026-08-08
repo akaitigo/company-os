@@ -74,8 +74,9 @@ def check_artifacts() -> None:
 
 def check_markdown() -> None:
     link_re = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
+    ignored_directories = {".git", "node_modules", "dist", "coverage", ".next", "artifacts"}
     for path in sorted(ROOT.rglob("*.md")):
-        if ".git" in path.parts:
+        if ignored_directories.intersection(path.parts):
             continue
         text = path.read_text(encoding="utf-8")
         if "\t" in text:

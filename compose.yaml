@@ -1,0 +1,43 @@
+name: company-os
+services:
+  postgres:
+    image: postgres:18.3-alpine@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7
+    environment:
+      POSTGRES_DB: company_os
+      POSTGRES_USER: company_os
+      POSTGRES_PASSWORD: local-development-only
+    ports: ['127.0.0.1:5432:5432']
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./infra/postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U company_os -d company_os']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.4@sha256:4797e5092fb159835ade57e1ae48a9a9c1bc8671bf5dccb0eb7481763dc57b31
+    command: ['start-dev', '--health-enabled=true']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: local-development-only
+    ports: ['127.0.0.1:8080:8080']
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493377c6942fcb154de7fd4856a32fbca31b42e1de012c1fdd6a09f504c
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: local-development-only
+      MINIO_ROOT_PASSWORD: local-development-only-secret
+    ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
+    volumes: ['minio-data:/data']
+  mailpit:
+    image: axllent/mailpit:v1.29.4@sha256:f89983e42e10fba4914f5b004d47a36a849a3fc797d6fcc1299e16b7a0123a41
+    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.147.0@sha256:2ff201bda484ecf3ad4b4a2b45d99d21ecf1e1ee8f485f13eb89ac16880863f7
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes: ['./infra/otel/config.yaml:/etc/otelcol/config.yaml:ro']
+    ports: ['127.0.0.1:4317:4317', '127.0.0.1:4318:4318']
+volumes:
+  postgres-data:
+  minio-data:
