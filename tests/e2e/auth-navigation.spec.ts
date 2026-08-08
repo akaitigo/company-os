@@ -63,4 +63,48 @@ test('authenticated administrator creates an audited organization command', asyn
   await journal.getByLabel('金額（JPY）').fill('120000');
   await journal.getByRole('button', { name: '転記' }).click();
   await expect(journal.getByRole('status')).toContainText('仕訳を転記しました');
+
+  const commandResult = await page.evaluate(async () => {
+    const tenantId = '11111111-1111-4111-8111-111111111111';
+    const post = async (command: string, body: Record<string, unknown>) => {
+      const response = await fetch(`/api/commands/${command}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return response.status;
+    };
+    const leave = await post('leave', {
+      id: crypto.randomUUID(),
+      tenantId,
+      employmentId: '10000000-0000-4000-8000-000000000003',
+      leaveType: 'annual',
+      startsOn: '2026-08-10',
+      endsOn: '2026-08-10',
+      requestedMinutes: 60,
+    });
+    const receipt = await post('receipt', {
+      id: crypto.randomUUID(),
+      tenantId,
+      receivableId: '10000000-0000-4000-8000-000000000008',
+      customerPartyId: '10000000-0000-4000-8000-000000000007',
+      receivedOn: '2026-08-09',
+      currency: 'JPY',
+      amount: 100,
+      externalReference: `E2E-${crypto.randomUUID()}`,
+    });
+    const allocation = await post('allocation', {
+      id: crypto.randomUUID(),
+      tenantId,
+      journalId: '10000000-0000-4000-8000-000000000009',
+      sourceCostCenterId: '10000000-0000-4000-8000-000000000010',
+      targetCostCenterId: '10000000-0000-4000-8000-000000000011',
+      amount: 100,
+      currency: 'JPY',
+      ruleId: 'RULE-COST-DEMO',
+      ruleVersion: 1,
+    });
+    return { leave, receipt, allocation };
+  });
+  expect(commandResult).toEqual({ leave: 201, receipt: 201, allocation: 201 });
 });

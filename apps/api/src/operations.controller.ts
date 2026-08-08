@@ -8,14 +8,17 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
+  allocateCostSchema,
+  applyReceiptSchema,
   createRequisitionSchema,
   postJournalSchema,
   recordAttendanceSchema,
+  requestLeaveSchema,
   requestContextSchema,
 } from '@company-os/contracts';
 import type { AuthenticatedRequest } from './auth.guard.js';
 import { AccessDeniedError } from './organization.service.js';
-import { OperationsService } from './operations.service.js';
+import { OperationConflictError, OperationsService } from './operations.service.js';
 
 @Controller('/v1')
 export class OperationsController {
@@ -25,6 +28,13 @@ export class OperationsController {
   recordAttendance(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.execute(recordAttendanceSchema.safeParse(body), request, (input, context) =>
       this.service.recordAttendance(input, context),
+    );
+  }
+
+  @Post('/workforce/leave-requests')
+  requestLeave(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(requestLeaveSchema.safeParse(body), request, (input, context) =>
+      this.service.requestLeave(input, context),
     );
   }
 
@@ -39,6 +49,20 @@ export class OperationsController {
   postJournal(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.execute(postJournalSchema.safeParse(body), request, (input, context) =>
       this.service.postJournal(input, context),
+    );
+  }
+
+  @Post('/finance/receipts')
+  applyReceipt(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(applyReceiptSchema.safeParse(body), request, (input, context) =>
+      this.service.applyReceipt(input, context),
+    );
+  }
+
+  @Post('/finance/cost-allocations')
+  allocateCost(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(allocateCostSchema.safeParse(body), request, (input, context) =>
+      this.service.allocateCost(input, context),
     );
   }
 
@@ -57,6 +81,8 @@ export class OperationsController {
       return await command(input.data, context.data);
     } catch (error) {
       if (error instanceof AccessDeniedError) throw new ForbiddenException();
+      if (error instanceof OperationConflictError)
+        throw new UnprocessableEntityException(error.message);
       throw error;
     }
   }

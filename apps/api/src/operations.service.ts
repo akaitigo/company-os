@@ -2,9 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { authorize } from '@company-os/authorization';
 import type {
+  AllocateCostInput,
+  ApplyReceiptInput,
   CreateRequisitionInput,
   PostJournalInput,
   RecordAttendanceInput,
+  RequestLeaveInput,
   RequestContext,
 } from '@company-os/contracts';
 import { entityId, tenantId } from '@company-os/kernel';
@@ -12,6 +15,7 @@ import { Pool, type PoolClient } from 'pg';
 import { AccessDeniedError } from './organization.service.js';
 
 type CommandResult = Readonly<{ id: string; version: number }>;
+export class OperationConflictError extends Error {}
 
 @Injectable()
 export class OperationsService {
@@ -52,6 +56,55 @@ export class OperationsService {
         input.id,
         {
           workDate: input.workDate,
+        },
+      );
+      return { id: input.id, version: 1 };
+    });
+  }
+
+  async requestLeave(input: RequestLeaveInput, context: RequestContext): Promise<CommandResult> {
+    this.assertAuthorized('workforce.leave.request', input.tenantId, context);
+    return this.transaction(context, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
+        `${input.tenantId}:${input.employmentId}:leave`,
+      ]);
+      const balance = await client.query<{ available: string }>(
+        `SELECT coalesce(sum(minutes),0)::text AS available
+           FROM workforce.leave_ledger
+          WHERE tenant_id=$1 AND employment_id=$2`,
+        [input.tenantId, input.employmentId],
+      );
+      if (Number(balance.rows[0]?.available ?? '0') < input.requestedMinutes)
+        throw new OperationConflictError('Insufficient leave balance');
+      await client.query(
+        `INSERT INTO workforce.leave_requests
+          (tenant_id,id,employment_id,leave_type,starts_on,ends_on,requested_minutes,status,requested_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,'pending',$8)`,
+        [
+          input.tenantId,
+          input.id,
+          input.employmentId,
+          input.leaveType,
+          input.startsOn,
+          input.endsOn,
+          input.requestedMinutes,
+          context.actorId,
+        ],
+      );
+      await client.query(
+        `INSERT INTO workforce.leave_ledger
+          (tenant_id,id,employment_id,occurred_at,entry_type,minutes,reference_id)
+         VALUES ($1,$2,$3,clock_timestamp(),'reserve',$4,$5)`,
+        [input.tenantId, randomUUID(), input.employmentId, -input.requestedMinutes, input.id],
+      );
+      await this.recordEvidence(
+        client,
+        context,
+        'workforce.leave.request',
+        'leave_request',
+        input.id,
+        {
+          requestedMinutes: input.requestedMinutes,
         },
       );
       return { id: input.id, version: 1 };
@@ -139,6 +192,93 @@ export class OperationsService {
           accountingDate: input.accountingDate,
           currency: input.currency,
           lineCount: input.lines.length,
+        },
+      );
+      return { id: input.id, version: 1 };
+    });
+  }
+
+  async applyReceipt(input: ApplyReceiptInput, context: RequestContext): Promise<CommandResult> {
+    this.assertAuthorized('finance.receipt.apply', input.tenantId, context);
+    return this.transaction(context, async (client) => {
+      const receivable = await client.query<{ currency: string; open_amount: string }>(
+        `SELECT currency,open_amount::text FROM finance.receivables
+          WHERE tenant_id=$1 AND id=$2 AND customer_party_id=$3 FOR UPDATE`,
+        [input.tenantId, input.receivableId, input.customerPartyId],
+      );
+      const row = receivable.rows[0];
+      if (
+        row === undefined ||
+        row.currency !== input.currency ||
+        Number(row.open_amount) < input.amount
+      )
+        throw new OperationConflictError('Receipt cannot be applied to receivable');
+      await client.query(
+        `INSERT INTO finance.receipts
+          (tenant_id,id,customer_party_id,received_on,currency,amount,external_reference)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          input.tenantId,
+          input.id,
+          input.customerPartyId,
+          input.receivedOn,
+          input.currency,
+          input.amount,
+          input.externalReference,
+        ],
+      );
+      await client.query(
+        `INSERT INTO finance.receipt_applications
+          (tenant_id,receipt_id,receivable_id,amount,applied_at,applied_by)
+         VALUES ($1,$2,$3,$4,clock_timestamp(),$5)`,
+        [input.tenantId, input.id, input.receivableId, input.amount, context.actorId],
+      );
+      await client.query(
+        `UPDATE finance.receivables SET open_amount=open_amount-$3,
+          status=CASE WHEN open_amount-$3=0 THEN 'paid' ELSE 'partial' END
+          WHERE tenant_id=$1 AND id=$2`,
+        [input.tenantId, input.receivableId, input.amount],
+      );
+      await this.recordEvidence(client, context, 'finance.receipt.apply', 'receipt', input.id, {
+        receivableId: input.receivableId,
+        amount: input.amount,
+        currency: input.currency,
+      });
+      return { id: input.id, version: 1 };
+    });
+  }
+
+  async allocateCost(input: AllocateCostInput, context: RequestContext): Promise<CommandResult> {
+    this.assertAuthorized('finance.cost.allocate', input.tenantId, context);
+    return this.transaction(context, async (client) => {
+      await client.query(
+        `INSERT INTO finance.cost_allocations
+          (tenant_id,id,journal_id,source_cost_center_id,target_cost_center_id,amount,currency,
+           rule_id,rule_version,allocated_at,allocated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,clock_timestamp(),$10)`,
+        [
+          input.tenantId,
+          input.id,
+          input.journalId,
+          input.sourceCostCenterId,
+          input.targetCostCenterId,
+          input.amount,
+          input.currency,
+          input.ruleId,
+          input.ruleVersion,
+          context.actorId,
+        ],
+      );
+      await this.recordEvidence(
+        client,
+        context,
+        'finance.cost.allocate',
+        'cost_allocation',
+        input.id,
+        {
+          journalId: input.journalId,
+          ruleId: input.ruleId,
+          ruleVersion: input.ruleVersion,
         },
       );
       return { id: input.id, version: 1 };

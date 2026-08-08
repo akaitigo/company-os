@@ -29,15 +29,15 @@ done
 export SESSION_SECRET="${SESSION_SECRET:-local-e2e-session-secret-at-least-32-characters}"
 export DATABASE_URL="${E2E_DATABASE_URL:-postgresql://company_os:local-development-only@127.0.0.1:5432/company_os}"
 audit_before="$(docker compose exec -T postgres psql -At -U company_os -d company_os -c \
-  "SELECT count(*) FROM audit.intents WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND action IN ('organization.unit.create','workforce.attendance.record','procurement.requisition.create','finance.journal.post')")"
+  "SELECT count(*) FROM audit.intents WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND action IN ('organization.unit.create','workforce.attendance.record','workforce.leave.request','procurement.requisition.create','finance.journal.post','finance.receipt.apply','finance.cost.allocate')")"
 outbox_before="$(docker compose exec -T postgres psql -At -U company_os -d company_os -c \
-  "SELECT count(*) FROM integration.outbox WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND event_type IN ('organization.unit.created.v1','attendance.created.v1','requisition.created.v1','posted_journal.created.v1')")"
+  "SELECT count(*) FROM integration.outbox WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND event_type IN ('organization.unit.created.v1','attendance.created.v1','leave_request.created.v1','requisition.created.v1','posted_journal.created.v1','receipt.created.v1','cost_allocation.created.v1')")"
 pnpm test:e2e
 audit_after="$(docker compose exec -T postgres psql -At -U company_os -d company_os -c \
-  "SELECT count(*) FROM audit.intents WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND action IN ('organization.unit.create','workforce.attendance.record','procurement.requisition.create','finance.journal.post')")"
+  "SELECT count(*) FROM audit.intents WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND action IN ('organization.unit.create','workforce.attendance.record','workforce.leave.request','procurement.requisition.create','finance.journal.post','finance.receipt.apply','finance.cost.allocate')")"
 outbox_after="$(docker compose exec -T postgres psql -At -U company_os -d company_os -c \
-  "SELECT count(*) FROM integration.outbox WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND event_type IN ('organization.unit.created.v1','attendance.created.v1','requisition.created.v1','posted_journal.created.v1')")"
-if (( audit_after - audit_before < 4 || outbox_after - outbox_before < 4 )); then
+  "SELECT count(*) FROM integration.outbox WHERE tenant_id='11111111-1111-4111-8111-111111111111' AND event_type IN ('organization.unit.created.v1','attendance.created.v1','leave_request.created.v1','requisition.created.v1','posted_journal.created.v1','receipt.created.v1','cost_allocation.created.v1')")"
+if (( audit_after - audit_before < 7 || outbox_after - outbox_before < 7 )); then
   echo 'E2E command did not atomically produce audit and outbox evidence' >&2
   exit 1
 fi

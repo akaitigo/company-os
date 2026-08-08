@@ -45,6 +45,13 @@ describe('authorization', () => {
     expect(
       authorize({
         principal: workforce,
+        action: 'workforce.leave.request',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
+    expect(
+      authorize({
+        principal: workforce,
         action: 'finance.journal.post',
         resourceTenantId: tenantA,
       }),

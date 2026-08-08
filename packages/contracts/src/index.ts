@@ -44,6 +44,22 @@ export const recordAttendanceSchema = z
   .strict();
 export type RecordAttendanceInput = z.infer<typeof recordAttendanceSchema>;
 
+export const requestLeaveSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    employmentId: uuidSchema,
+    leaveType: z.string().trim().min(1).max(32),
+    startsOn: isoDateSchema,
+    endsOn: isoDateSchema,
+    requestedMinutes: z.number().int().positive().max(525_600),
+  })
+  .strict()
+  .refine((leave) => leave.endsOn >= leave.startsOn, {
+    message: 'Leave end date must not precede its start date',
+  });
+export type RequestLeaveInput = z.infer<typeof requestLeaveSchema>;
+
 export const createRequisitionSchema = z
   .object({
     id: uuidSchema,
@@ -96,6 +112,38 @@ export const postJournalSchema = z
     { message: 'Journal must balance' },
   );
 export type PostJournalInput = z.infer<typeof postJournalSchema>;
+
+export const applyReceiptSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    receivableId: uuidSchema,
+    customerPartyId: uuidSchema,
+    receivedOn: isoDateSchema,
+    currency: z.string().regex(/^[A-Z]{3}$/),
+    amount: decimalAmountSchema.positive(),
+    externalReference: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type ApplyReceiptInput = z.infer<typeof applyReceiptSchema>;
+
+export const allocateCostSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    journalId: uuidSchema,
+    sourceCostCenterId: uuidSchema,
+    targetCostCenterId: uuidSchema,
+    amount: decimalAmountSchema.positive(),
+    currency: z.string().regex(/^[A-Z]{3}$/),
+    ruleId: z.string().trim().min(1).max(80),
+    ruleVersion: z.number().int().positive(),
+  })
+  .strict()
+  .refine((allocation) => allocation.sourceCostCenterId !== allocation.targetCostCenterId, {
+    message: 'Source and target cost centers must differ',
+  });
+export type AllocateCostInput = z.infer<typeof allocateCostSchema>;
 
 export const requestContextSchema = z
   .object({

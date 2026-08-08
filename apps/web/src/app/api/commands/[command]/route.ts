@@ -3,8 +3,11 @@ import { proxyApi } from '../../../../lib/api-proxy';
 
 const paths: Readonly<Record<string, string>> = {
   attendance: '/v1/workforce/attendance',
+  leave: '/v1/workforce/leave-requests',
   requisition: '/v1/procurement/requisitions',
   journal: '/v1/finance/journals',
+  receipt: '/v1/finance/receipts',
+  allocation: '/v1/finance/cost-allocations',
 };
 
 export async function POST(
