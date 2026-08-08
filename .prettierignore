@@ -2,6 +2,7 @@ node_modules
 dist
 coverage
 .next
+apps/web/next-env.d.ts
 pnpm-lock.yaml
 COMPANY_OS_CODEX_HANDOFF.md
 AGENTS.md

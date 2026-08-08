@@ -46,6 +46,42 @@ $$;
 
 ROLLBACK;
 
+BEGIN;
+INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
+VALUES ('99999999-9999-4999-8999-999999999999','20202020-2020-4020-8020-202020202020','OPS','Operations','2026-04-01');
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('99999999-9999-4999-8999-999999999999','21212121-2121-4121-8121-212121212121','person','Attendance Worker');
+INSERT INTO workforce.employments
+  (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+VALUES
+  ('99999999-9999-4999-8999-999999999999','22222222-2222-4222-8222-222222222222',
+   '21212121-2121-4121-8121-212121212121','20202020-2020-4020-8020-202020202020','2026-04-01',2400,'active');
+SET LOCAL ROLE company_os_app;
+SELECT set_config('app.tenant_id', '99999999-9999-4999-8999-999999999999', true);
+INSERT INTO workforce.attendance_entries
+  (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+VALUES
+  ('99999999-9999-4999-8999-999999999999','23232323-2323-4232-8232-232323232323',
+   '22222222-2222-4222-8222-222222222222','2026-08-09','2026-08-09T00:00:00Z','2026-08-09T09:00:00Z',60,
+   'clock','submitted','24242424-2424-4242-8242-242424242424');
+DO $$
+BEGIN
+  PERFORM set_config('app.tenant_id', '77777777-7777-4777-8777-777777777777', true);
+  IF (SELECT count(*) FROM workforce.attendance_entries) <> 0 THEN
+    RAISE EXCEPTION 'cross-tenant attendance leaked through RLS';
+  END IF;
+  PERFORM set_config('app.tenant_id', '99999999-9999-4999-8999-999999999999', true);
+  BEGIN
+    UPDATE workforce.attendance_entries SET status='approved'
+    WHERE id='23232323-2323-4232-8232-232323232323';
+    RAISE EXCEPTION 'append-only attendance update unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'append-only attendance update unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+END;
+$$;
+ROLLBACK;
+
 DO $$
 BEGIN
   BEGIN
