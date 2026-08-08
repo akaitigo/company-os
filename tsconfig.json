@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "apps/api" },
+    { "path": "apps/worker" },
     { "path": "packages/kernel" },
     { "path": "packages/contracts" },
     { "path": "modules/organization" },

@@ -5,4 +5,5 @@ repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_dir"
 docker compose up -d --wait postgres
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os -f /docker-entrypoint-initdb.d/0001_platform.verify.sql
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os -f /docker-entrypoint-initdb.d/0002_organization_projection.verify.sql
 docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os < tests/integration/platform.sql

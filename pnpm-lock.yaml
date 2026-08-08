@@ -91,6 +91,19 @@ importers:
         specifier: 4.21.0
         version: 4.21.0
 
+  apps/worker:
+    dependencies:
+      pg:
+        specifier: 8.18.0
+        version: 8.18.0
+      zod:
+        specifier: 4.3.5
+        version: 4.3.5
+    devDependencies:
+      '@types/pg':
+        specifier: 8.16.0
+        version: 8.16.0
+
   modules/audit:
     dependencies:
       '@company-os/kernel':
