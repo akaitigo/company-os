@@ -1,5 +1,6 @@
 import { cookies } from 'next/headers';
 import { UnitForm } from './unit-form';
+import { OperationsForms } from './operations-forms';
 export default async function Home(): Promise<React.JSX.Element> {
   const authenticated = (await cookies()).has('company_os_session');
   return (
@@ -15,6 +16,7 @@ export default async function Home(): Promise<React.JSX.Element> {
             <a href="/auth/logout">ログアウト</a>
           </nav>
           <UnitForm />
+          <OperationsForms />
         </>
       ) : (
         <section aria-labelledby="sign-in">
