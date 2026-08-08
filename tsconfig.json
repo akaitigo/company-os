@@ -10,6 +10,9 @@
     { "path": "modules/audit" },
     { "path": "modules/integration" },
     { "path": "modules/identity" },
+    { "path": "modules/workflow" },
+    { "path": "modules/documents" },
+    { "path": "modules/compliance" },
     { "path": "modules/workforce" },
     { "path": "modules/source-to-pay" },
     { "path": "modules/finance" }

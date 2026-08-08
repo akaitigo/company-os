@@ -125,6 +125,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/kernel
 
+  modules/compliance:
+    dependencies:
+      '@company-os/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+
+  modules/documents:
+    dependencies:
+      '@company-os/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+
   modules/finance:
     dependencies:
       '@company-os/kernel':
@@ -156,6 +168,12 @@ importers:
         version: link:../../packages/kernel
 
   modules/source-to-pay:
+    dependencies:
+      '@company-os/kernel':
+        specifier: workspace:*
+        version: link:../../packages/kernel
+
+  modules/workflow:
     dependencies:
       '@company-os/kernel':
         specifier: workspace:*
