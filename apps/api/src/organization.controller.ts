@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   Inject,
   Post,
   Req,
@@ -26,6 +27,20 @@ export class OrganizationController {
       throw new UnprocessableEntityException('Invalid bounded request');
     try {
       return await this.service.create(input.data, context.data);
+    } catch (error) {
+      if (error instanceof AccessDeniedError) throw new ForbiddenException();
+      throw error;
+    }
+  }
+
+  @Get()
+  async list(
+    @Req() request: AuthenticatedRequest,
+  ): Promise<readonly { id: string; code: string; name: string; version: number }[]> {
+    const context = requestContextSchema.safeParse(request.companyOsContext);
+    if (!context.success) throw new UnprocessableEntityException('Invalid authentication context');
+    try {
+      return await this.service.list(context.data);
     } catch (error) {
       if (error instanceof AccessDeniedError) throw new ForbiddenException();
       throw error;

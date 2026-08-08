@@ -122,4 +122,45 @@ export class OrganizationService {
       client.release();
     }
   }
+
+  async list(
+    context: RequestContext,
+  ): Promise<readonly { id: string; code: string; name: string; version: number }[]> {
+    const principal = {
+      actorId: entityId(context.actorId),
+      tenantId: tenantId(context.tenantId),
+      roles: context.roles,
+    };
+    if (
+      authorize({
+        principal,
+        action: 'organization.unit.read',
+        resourceTenantId: principal.tenantId,
+      }) !== 'allow'
+    )
+      throw new AccessDeniedError('Authorization denied');
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SET LOCAL ROLE company_os_app');
+      await client.query("SELECT set_config('app.tenant_id', $1, true)", [context.tenantId]);
+      const result = await client.query<{
+        id: string;
+        code: string;
+        name: string;
+        version: number;
+      }>(
+        `SELECT unit_id AS id,code,name,source_version AS version FROM projection.organization_unit_directory
+         WHERE tenant_id=$1 ORDER BY code LIMIT 500`,
+        [context.tenantId],
+      );
+      await client.query('COMMIT');
+      return result.rows;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
 }

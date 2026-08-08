@@ -3,6 +3,7 @@
   "references": [
     { "path": "apps/api" },
     { "path": "apps/worker" },
+    { "path": "apps/web" },
     { "path": "packages/kernel" },
     { "path": "packages/contracts" },
     { "path": "modules/organization" },
