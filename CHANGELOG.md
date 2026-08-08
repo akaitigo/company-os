@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-09
+
 ### Added
 
 - Tenant-isolated Organization、Workforce、Source-to-Pay、Finance、Workflow、Documents、Compliance、Audit、Integrationのreference implementation。

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "target": "1.0.0",
-  "release_status": "candidate",
+  "release_status": "ready",
   "features": [
     { "id": "V1-PLT-001", "name": "Repository harness and CI", "status": "passing", "evidence": "./scripts/verify" },
     { "id": "V1-PLT-002", "name": "Organization unit transactional vertical slice", "status": "passing", "evidence": "apps/api/src/organization.service.ts" },
