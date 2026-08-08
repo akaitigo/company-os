@@ -17,7 +17,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'pnpm --filter @company-os/api dev',
-      url: 'http://127.0.0.1:3001/health/live',
+      url: 'http://127.0.0.1:3001/health/ready',
       reuseExistingServer: false,
       timeout: 60_000,
     },

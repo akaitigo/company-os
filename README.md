@@ -43,6 +43,7 @@ pnpm exec playwright install chromium
 ## Architecture and operations
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [HTTP API v1](docs/API.md)
 - [Security Boundary](docs/SECURITY_BOUNDARY.md)
 - [Operations / migration / rollback / incident runbook](docs/OPERATIONS.md)
 - [Domain model](docs/data-model/domain-model.md)
