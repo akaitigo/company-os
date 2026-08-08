@@ -10,6 +10,7 @@
       "@company-os/contracts": ["packages/contracts/src/index.ts"],
       "@company-os/finance": ["modules/finance/src/index.ts"],
       "@company-os/integration": ["modules/integration/src/index.ts"],
+      "@company-os/identity": ["modules/identity/src/index.ts"],
       "@company-os/kernel": ["packages/kernel/src/index.ts"],
       "@company-os/organization": ["modules/organization/src/index.ts"],
       "@company-os/source-to-pay": ["modules/source-to-pay/src/index.ts"],

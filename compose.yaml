@@ -16,12 +16,14 @@ services:
       timeout: 3s
       retries: 20
   keycloak:
-    image: quay.io/keycloak/keycloak:26.5.4@sha256:4797e5092fb159835ade57e1ae48a9a9c1bc8671bf5dccb0eb7481763dc57b31
-    command: ['start-dev', '--health-enabled=true']
+    image: quay.io/keycloak/keycloak:26.5.4@sha256:ae8efb0d218d8921334b03a2dbee7069a0b868240691c50a3ffc9f42fabba8b4
+    command: ['start-dev', '--health-enabled=true', '--import-realm']
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: local-development-only
     ports: ['127.0.0.1:8080:8080']
+    volumes:
+      - ./infra/keycloak/company-os-realm.json:/opt/keycloak/data/import/company-os-realm.json:ro
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493377c6942fcb154de7fd4856a32fbca31b42e1de012c1fdd6a09f504c
     command: ['server', '/data', '--console-address', ':9001']

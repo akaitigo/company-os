@@ -2,12 +2,13 @@ import {
   Body,
   Controller,
   ForbiddenException,
-  Headers,
   Inject,
   Post,
+  Req,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { createOrganizationUnitSchema, requestContextSchema } from '@company-os/contracts';
+import type { AuthenticatedRequest } from './auth.guard.js';
 import { AccessDeniedError, OrganizationService } from './organization.service.js';
 
 @Controller('/v1/organization-units')
@@ -17,18 +18,10 @@ export class OrganizationController {
   @Post()
   async create(
     @Body() body: unknown,
-    @Headers('x-request-id') requestId: string | undefined,
-    @Headers('x-tenant-id') tenantId: string | undefined,
-    @Headers('x-actor-id') actorId: string | undefined,
-    @Headers('x-roles') roles: string | undefined,
+    @Req() request: AuthenticatedRequest,
   ): Promise<{ id: string; version: number }> {
     const input = createOrganizationUnitSchema.safeParse(body);
-    const context = requestContextSchema.safeParse({
-      requestId,
-      tenantId,
-      actorId,
-      roles: roles?.split(',') ?? [],
-    });
+    const context = requestContextSchema.safeParse(request.companyOsContext);
     if (!input.success || !context.success)
       throw new UnprocessableEntityException('Invalid bounded request');
     try {

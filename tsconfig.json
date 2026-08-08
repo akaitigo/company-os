@@ -9,6 +9,7 @@
     { "path": "modules/authorization" },
     { "path": "modules/audit" },
     { "path": "modules/integration" },
+    { "path": "modules/identity" },
     { "path": "modules/workforce" },
     { "path": "modules/source-to-pay" },
     { "path": "modules/finance" }

@@ -13,7 +13,8 @@
     { "path": "../../modules/organization" },
     { "path": "../../modules/authorization" },
     { "path": "../../modules/audit" },
-    { "path": "../../modules/integration" }
+    { "path": "../../modules/integration" },
+    { "path": "../../modules/identity" }
   ],
   "include": ["src/**/*.ts"]
 }
