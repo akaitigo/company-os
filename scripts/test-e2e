@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+docker compose up -d keycloak
+curl --fail --silent --retry 30 --retry-all-errors --retry-delay 2 --max-time 3 \
+  http://127.0.0.1:8080/realms/company-os/.well-known/openid-configuration >/dev/null
+export SESSION_SECRET="${SESSION_SECRET:-local-e2e-session-secret-at-least-32-characters}"
+pnpm test:e2e

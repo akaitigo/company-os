@@ -19,7 +19,7 @@
     { "id": "V1-WEB-001", "name": "Accessible operational web UI", "status": "partial", "evidence": "apps/web/src/app/page.tsx" },
     { "id": "V1-OPS-001", "name": "Migration and backup restore rehearsal", "status": "passing", "evidence": "./scripts/test-restore" },
     { "id": "V1-SEC-001", "name": "SAST, SCA, secrets, SBOM and container scan", "status": "partial", "evidence": ".github/workflows/codeql.yml" },
-    { "id": "V1-E2E-001", "name": "Browser E2E and accessibility", "status": "pending", "evidence": null },
+    { "id": "V1-E2E-001", "name": "Browser E2E and accessibility", "status": "partial", "evidence": "tests/e2e/auth-navigation.spec.ts" },
     { "id": "V1-OSS-001", "name": "License, contributing, security and governance", "status": "pending", "evidence": null }
   ]
 }

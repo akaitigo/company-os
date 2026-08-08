@@ -8,9 +8,15 @@ importers:
 
   .:
     devDependencies:
+      '@axe-core/playwright':
+        specifier: 4.12.1
+        version: 4.12.1(playwright-core@1.62.1)
       '@eslint/js':
         specifier: 9.39.2
         version: 9.39.2
+      '@playwright/test':
+        specifier: 1.62.1
+        version: 1.62.1
       '@types/node':
         specifier: 24.10.1
         version: 24.10.1
@@ -107,7 +113,7 @@ importers:
         version: 6.2.8
       next:
         specifier: 16.3.0
-        version: 16.3.0(@types/node@24.10.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+        version: 16.3.0(@playwright/test@1.62.1)(@types/node@24.10.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       openid-client:
         specifier: 6.8.4
         version: 6.8.4
@@ -219,6 +225,11 @@ importers:
   packages/kernel: {}
 
 packages:
+
+  '@axe-core/playwright@4.12.1':
+    resolution: {integrity: sha512-rMd7xriptqKpP+w5265i4Hdkv2X5kbu6uiBi/B2I7uf3hieRBM3qDCfaKPtxfiYb2mKXfF+yLODJwIx+Jv1GDw==}
+    peerDependencies:
+      playwright-core: '>= 1.0.0'
 
   '@babel/helper-string-parser@7.29.7':
     resolution: {integrity: sha512-Pb5ijPrZ89GDH8223L4UP8i6QApWxs04RbPQJTeWDV0/keR2E36MeKnyr6LYmUUvqRRI+Iv87SuF1W6ErINzYw==}
@@ -924,6 +935,11 @@ packages:
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
 
+  '@playwright/test@1.62.1':
+    resolution: {integrity: sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   '@rollup/rollup-android-arm-eabi@4.62.4':
     resolution: {integrity: sha512-RrPokAb7dmbxFoeO3TloqHyOjgye8RkBhSqmp4aJMIex4c9r46ZstPnleDQOq1t46VOVjwIuwNogIqbodV1Vvg==}
     cpu: [arm]
@@ -1350,6 +1366,10 @@ packages:
   avvio@9.3.0:
     resolution: {integrity: sha512-g2tQ7LE7oOSqDfwEm3M+ZCMTJc7KiZCdJ4UwyZJb5ckTKyYu50OYmvv0mCFXPuYXoM4zkSt8zM9XQ9KCvxA74A==}
 
+  axe-core@4.12.1:
+    resolution: {integrity: sha512-s7iGf5GaVMxEG0ENN9x+xTr7GFZCb1ZP/1uATUpCEK2X78nDB3RwbtFCo9pGAf9ru+VwoQ464DkaLEeRM08wJA==}
+    engines: {node: '>=4'}
+
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
@@ -1606,6 +1626,11 @@ packages:
 
   flatted@3.4.4:
     resolution: {integrity: sha512-5+ybhBZANEJxaH3X5evAFatUxLfEHSr7n6kYJ+1Qd0mUqr4eu9gIf6GDbWHf8RJijHrjjO8G+la14SlL2SeS1Q==}
+
+  fsevents@2.3.2:
+    resolution: {integrity: sha512-xiqMQR4xAeHTuB9uWm+fFRcIOgKBMiOBP+eXiyT7jsgVCq1bkVygt00oASowB7EdtpOHaaPgKt812P9ab+DDKA==}
+    engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
+    os: [darwin]
 
   fsevents@2.3.3:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
@@ -1884,6 +1909,16 @@ packages:
 
   pino@10.3.1:
     resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
+    hasBin: true
+
+  playwright-core@1.62.1:
+    resolution: {integrity: sha512-wPYSwEBJY9GHraISXqyqtx0na0LpO3XEX7jNDhntbex7tzUS7kLnZsOlFruFJB4Hi/rhDMjXGqHewDZ68nYZVw==}
+    engines: {node: '>=20'}
+    hasBin: true
+
+  playwright@1.62.1:
+    resolution: {integrity: sha512-0M+L3LAD8/nm554LOla9Ayx0j0tmFZ0FBcoQ7F1VuVHpM/XpiC8RcDzBQB8W5+hA8L22THxELzeF+2WcUzvcLg==}
+    engines: {node: '>=20'}
     hasBin: true
 
   postcss@8.5.23:
@@ -2243,6 +2278,11 @@ packages:
     resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
 
 snapshots:
+
+  '@axe-core/playwright@4.12.1(playwright-core@1.62.1)':
+    dependencies:
+      axe-core: 4.12.1
+      playwright-core: 1.62.1
 
   '@babel/helper-string-parser@7.29.7': {}
 
@@ -2732,6 +2772,10 @@ snapshots:
 
   '@pinojs/redact@0.4.0': {}
 
+  '@playwright/test@1.62.1':
+    dependencies:
+      playwright: 1.62.1
+
   '@rollup/rollup-android-arm-eabi@4.62.4':
     optional: true
 
@@ -3119,6 +3163,8 @@ snapshots:
       '@fastify/error': 4.2.0
       fastq: 1.20.1
 
+  axe-core@4.12.1: {}
+
   balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
@@ -3443,6 +3489,9 @@ snapshots:
 
   flatted@3.4.4: {}
 
+  fsevents@2.3.2:
+    optional: true
+
   fsevents@2.3.3:
     optional: true
 
@@ -3581,7 +3630,7 @@ snapshots:
 
   natural-compare@1.4.0: {}
 
-  next@16.3.0(@types/node@24.10.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
+  next@16.3.0(@playwright/test@1.62.1)(@types/node@24.10.1)(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
     dependencies:
       '@next/env': 16.3.0
       '@swc/helpers': 0.5.15
@@ -3600,6 +3649,7 @@ snapshots:
       '@next/swc-linux-x64-musl': 16.3.0
       '@next/swc-win32-arm64-msvc': 16.3.0
       '@next/swc-win32-x64-msvc': 16.3.0
+      '@playwright/test': 1.62.1
       sharp: 0.35.3(@types/node@24.10.1)
     transitivePeerDependencies:
       - '@babel/core'
@@ -3704,6 +3754,14 @@ snapshots:
       safe-stable-stringify: 2.5.0
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
+
+  playwright-core@1.62.1: {}
+
+  playwright@1.62.1:
+    dependencies:
+      playwright-core: 1.62.1
+    optionalDependencies:
+      fsevents: 2.3.2
 
   postcss@8.5.23:
     dependencies:

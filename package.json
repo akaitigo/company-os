@@ -15,10 +15,13 @@
     "test": "vitest run --coverage",
     "test:unit": "vitest run tests/unit",
     "test:architecture": "vitest run tests/architecture",
+    "test:e2e": "playwright test",
     "verify:spec": "./scripts/verify-spec"
   },
   "devDependencies": {
     "@eslint/js": "9.39.2",
+    "@axe-core/playwright": "4.12.1",
+    "@playwright/test": "1.62.1",
     "@types/node": "24.10.1",
     "@vitest/coverage-v8": "4.0.18",
     "eslint": "9.39.2",

@@ -12,7 +12,22 @@ function encryptionKey(): Uint8Array {
 }
 let cachedConfiguration: oidc.Configuration | undefined;
 export async function configuration(): Promise<oidc.Configuration> {
-  cachedConfiguration ??= await oidc.discovery(issuer, clientId);
+  const localHttp =
+    issuer.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(issuer.hostname);
+  cachedConfiguration ??= await oidc.discovery(
+    issuer,
+    clientId,
+    undefined,
+    undefined,
+    localHttp
+      ? {
+          // The library intentionally deprecates this escape hatch; it is restricted to loopback E2E only.
+          // eslint-disable-next-line @typescript-eslint/no-deprecated
+          execute: [oidc.allowInsecureRequests],
+          timeout: 5,
+        }
+      : { timeout: 5 },
+  );
   return cachedConfiguration;
 }
 export async function seal(values: Record<string, unknown>, expiresIn: string): Promise<string> {
