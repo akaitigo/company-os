@@ -251,6 +251,23 @@ export class OperationsService {
   async allocateCost(input: AllocateCostInput, context: RequestContext): Promise<CommandResult> {
     this.assertAuthorized('finance.cost.allocate', input.tenantId, context);
     return this.transaction(context, async (client) => {
+      const journal = await client.query<{ currency: string; unallocated: string }>(
+        `SELECT j.currency,
+                (SELECT coalesce(sum(l.debit),0) FROM finance.posted_journal_lines l
+                  WHERE l.tenant_id=j.tenant_id AND l.journal_id=j.id)
+                - (SELECT coalesce(sum(a.amount),0) FROM finance.cost_allocations a
+                    WHERE a.tenant_id=j.tenant_id AND a.journal_id=j.id) AS unallocated
+           FROM finance.posted_journals j
+          WHERE j.tenant_id=$1 AND j.id=$2 FOR UPDATE`,
+        [input.tenantId, input.journalId],
+      );
+      const row = journal.rows[0];
+      if (
+        row === undefined ||
+        row.currency !== input.currency ||
+        Number(row.unallocated) < input.amount
+      )
+        throw new OperationConflictError('Allocation exceeds the journal amount or currency');
       await client.query(
         `INSERT INTO finance.cost_allocations
           (tenant_id,id,journal_id,source_cost_center_id,target_cost_center_id,amount,currency,

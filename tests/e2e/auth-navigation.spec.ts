@@ -104,7 +104,23 @@ test('authenticated administrator creates an audited organization command', asyn
       ruleId: 'RULE-COST-DEMO',
       ruleVersion: 1,
     });
-    return { leave, receipt, allocation };
+    const rejectedAllocation = await post('allocation', {
+      id: crypto.randomUUID(),
+      tenantId,
+      journalId: '10000000-0000-4000-8000-000000000009',
+      sourceCostCenterId: '10000000-0000-4000-8000-000000000010',
+      targetCostCenterId: '10000000-0000-4000-8000-000000000011',
+      amount: 100,
+      currency: 'USD',
+      ruleId: 'RULE-COST-DEMO',
+      ruleVersion: 1,
+    });
+    return { leave, receipt, allocation, rejectedAllocation };
   });
-  expect(commandResult).toEqual({ leave: 201, receipt: 201, allocation: 201 });
+  expect(commandResult).toEqual({
+    leave: 201,
+    receipt: 201,
+    allocation: 201,
+    rejectedAllocation: 422,
+  });
 });
