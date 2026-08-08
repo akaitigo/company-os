@@ -1,7 +1,7 @@
 name: company-os
 services:
   postgres:
-    image: postgres:18.3-alpine@sha256:54451ecb8ab38c24c3ec123f2fd501303a3a1856a5c66e98cecf2460d5e1e9d7
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
     environment:
       POSTGRES_DB: company_os
       POSTGRES_USER: company_os
@@ -16,7 +16,7 @@ services:
       timeout: 3s
       retries: 20
   keycloak:
-    image: quay.io/keycloak/keycloak:26.5.4@sha256:ae8efb0d218d8921334b03a2dbee7069a0b868240691c50a3ffc9f42fabba8b4
+    image: quay.io/keycloak/keycloak:26.6.3@sha256:9b0330756022422149aa6502eb2def8cd47c6e1b000c7c65cdb13e7c0133e992
     command: ['start-dev', '--health-enabled=true', '--import-realm']
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -24,22 +24,10 @@ services:
     ports: ['127.0.0.1:8080:8080']
     volumes:
       - ./infra/keycloak/company-os-realm.json:/opt/keycloak/data/import/company-os-realm.json:ro
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493377c6942fcb154de7fd4856a32fbca31b42e1de012c1fdd6a09f504c
-    command: ['server', '/data', '--console-address', ':9001']
-    environment:
-      MINIO_ROOT_USER: local-development-only
-      MINIO_ROOT_PASSWORD: local-development-only-secret
-    ports: ['127.0.0.1:9000:9000', '127.0.0.1:9001:9001']
-    volumes: ['minio-data:/data']
-  mailpit:
-    image: axllent/mailpit:v1.29.4@sha256:f89983e42e10fba4914f5b004d47a36a849a3fc797d6fcc1299e16b7a0123a41
-    ports: ['127.0.0.1:1025:1025', '127.0.0.1:8025:8025']
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.147.0@sha256:2ff201bda484ecf3ad4b4a2b45d99d21ecf1e1ee8f485f13eb89ac16880863f7
+    image: otel/opentelemetry-collector-contrib:0.157.0@sha256:f2f01157055a9b2aab9df7118e1f1c9abf345e99b23bc7a2bc791db374a7d0f6
     command: ['--config=/etc/otelcol/config.yaml']
     volumes: ['./infra/otel/config.yaml:/etc/otelcol/config.yaml:ro']
     ports: ['127.0.0.1:4317:4317', '127.0.0.1:4318:4318']
 volumes:
   postgres-data:
-  minio-data:

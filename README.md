@@ -1,78 +1,59 @@
 # Company OS
 
-日本企業の設立・雇用・取引・会計・統制・運営に必要な業務システムを、
-法令・業務要件・データ・権限・監査・運用まで追跡可能にするOSS参照実装プロジェクト。
+日本企業の組織・雇用・購買・会計・統制を、tenant分離、権限、監査、適用日、保持、再試行まで一つの設計で扱うApache-2.0 OSS reference implementationです。法的・税務・労務上の助言や、日本法への完全適合を保証する製品ではありません。
 
-## 現在の状態
+## V1 release candidate scope
 
-Milestone 0「Company OS Specification v0.1」は完了し、V1.0を実装中。
-Platform vertical sliceとしてOrganization Unit、tenant認可、監査intent、transactional outbox、冪等worker projectionを実装済み。Workforce、Source-to-Pay、Finance、Web UIは進行中であり、現時点のリリースはまだV1.0ではない。
+- Platform: Organization/Party、Keycloak OIDC + PKCE、RBAC/SoD、Workflow、Documents metadata/retention、versioned Compliance Rules、append-only Audit、outbox/projection。
+- Workforce: employment、attendance corrections、leave request/ledger。
+- Source-to-Pay: supplier、requisition、PO/receipt、expense、AP three-way match、payment approval/event evidence。
+- Finance: chart of accounts、balanced append-only GL/reversal、AR receipt/application、cost allocation。
+- Delivery: Next.js console、NestJS/Fastify API、worker、PostgreSQL RLS、OpenTelemetry、sample company、unit/integration/restore/E2E/security CI。
 
-委任可能性はLevel 1。正規検証、CI、境界テスト、実DB migration/rollback、backup/restoreは成立したが、Level 1 pilot 3件とE2E安定化が未完了のためLevel 2とは判定しない。
+Full Payroll、bank/government live adapters、tax filing、Governance/Retail、production KMS/PITR/SIEMはV2以降またはdeploy組織の責務です。MinIO Community prebuilt imageは保守終了と未修正Criticalのため同梱せず、document objectはmanaged S3-compatible adapter境界にしています。
 
-## 文書
+## Quick start
 
-- [構想原典](COMPANY_OS_CODEX_HANDOFF.md)
-- [TASK-001 Initial Gap Analysis](docs/reviews/initial-gap-analysis.md)
-- [TASK-001〜006 調査・設計計画](docs/plans/task-001-006-plan.md)
-- [TASK-002 Business Capability Map](docs/domains/business-capability-map.md)
-- [TASK-003 System Catalog](docs/domains/system-catalog.md)
-- [TASK-004 Legal Requirement Catalog（調査中）](docs/compliance/legal-requirement-catalog.md)
-- [Law Catalog](docs/compliance/law-catalog.md)
-- [Applicability Matrix](docs/compliance/applicability-matrix.md)
-- [Retention Matrix](docs/compliance/retention-matrix.md)
-- [Control Catalog](docs/compliance/control-catalog.md)
-- [Compliance Test Catalog](docs/compliance/compliance-test-catalog.md)
-- [Data Classification](docs/security/data-classification.md)
-- [Master Data Ownership](docs/data-model/master-data-ownership.md)
-- [TASK-005 Phase 1〜4 Domain Model](docs/data-model/domain-model.md)
-- [Role / SoD Matrix](docs/governance/role-sod-matrix.md)
-- [Integration Map](docs/integrations/integration-map.md)
-- [Non-functional Requirements](docs/requirements/non-functional-requirements.md)
-- [Threat Model](docs/security/threat-model.md)
-- [Glossary](docs/glossary/glossary.md)
-- [Technology Evaluation](docs/architecture/technology-evaluation.md)
-- [Architecture Draft](docs/architecture/architecture-draft.md)
-- [ADR-001 Modular Monolith](docs/adr/ADR-001-modular-monolith.md)
-- [ADR-002 TypeScript Stack](docs/adr/ADR-002-typescript-stack.md)
-- [ADR-003 Identity / Authorization](docs/adr/ADR-003-external-identity-internal-authorization.md)
-- [ADR-004 PostgreSQL Outbox](docs/adr/ADR-004-postgresql-outbox.md)
-- [ADR-005 Compliance Kernel](docs/adr/ADR-005-versioned-compliance-kernel.md)
-- [ADR-006 Deployment Profiles](docs/adr/ADR-006-deployment-profiles.md)
-- [Milestone 0 Manifest](docs/milestones/milestone-0-manifest.md)
-- [TASK-007 Implementation Contract](docs/tasks/TASK-007-repository-bootstrap.md)
-- [Delegation Readiness Gate](docs/plans/delegation-readiness.md)
-- [リポジトリ作業規則](AGENTS.md)
-
-## スコープ
-
-初期対象は日本の一般企業。将来の国際化と業種拡張を妨げない境界を検討するが、Milestone 0では調査成果と設計判断のみを作成する。
-
-## 非目標
-
-- 法的・税務・労務上の助言を提供すること
-- 現時点で「日本法へ完全対応」と保証すること
-- TASK-001〜006完了前にERP機能を実装すること
-- 認証、暗号、電子署名、税務申告、銀行決済を安易に自作すること
-
-## 検証
-
-Milestone 0の仕様検証:
-
-```bash
-./scripts/verify-spec
-```
-
-このcommandは必須成果物、Requirement YAML/schema fields、ID一意性・参照、Markdown link、System Catalog、Domain Model、ADR、manifestを検証する。Python 3とPyYAMLが必要。
-
-プロダクトコードを含むローカル/CI共通の正規検証は `./scripts/verify`。
+前提はNode.js 24、pnpm 9.15.9、Docker Compose、Python 3 + PyYAMLです。
 
 ```bash
 corepack enable
 pnpm install --frozen-lockfile
+docker compose up -d --wait
+./scripts/seed-demo
 ./scripts/verify
 ./scripts/test-integration
 ./scripts/test-restore
+pnpm exec playwright install chromium
+./scripts/test-e2e
 ```
 
-ローカル依存サービスは `docker compose up -d` で起動する。`.env.example`を`.env`へコピーし、placeholder secretは必ず生成値へ置換すること。
+`.env.example`を基に設定し、placeholder credentialは必ず生成値またはworkload identityへ置換してください。demo seedは架空データのみで冪等です。E2E user/passwordは実行時に一時生成され、repositoryへ保存されません。
+
+## Security and supply chain
+
+```bash
+./scripts/verify-security
+```
+
+このcommandはproduction dependency audit、vulnerability/misconfiguration/secret scan、CycloneDX SBOM、Compose image scanを実行します。Trivyは2026年のtag compromiseを踏まえ、incident後のcontainer digestへ固定しています。High/Critical reportとSBOMは`artifacts/`へ生成し、未抑制Criticalを失敗させます。期限付きVEXは[`.trivyignore.yaml`](.trivyignore.yaml)に根拠と失効日を明記します。
+
+脆弱性は公開Issueではなく[Security Policy](SECURITY.md)のprivate reporting経路へ連絡してください。
+
+## Architecture and operations
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [Security Boundary](docs/SECURITY_BOUNDARY.md)
+- [Operations / migration / rollback / incident runbook](docs/OPERATIONS.md)
+- [Domain model](docs/data-model/domain-model.md)
+- [Role / SoD matrix](docs/governance/role-sod-matrix.md)
+- [Compliance applicability](docs/compliance/applicability-matrix.md)
+- [Retention matrix](docs/compliance/retention-matrix.md)
+- [ADRs](docs/adr/)
+- [V1 feature evidence](docs/plans/v1-features.json)
+
+## Contributing
+
+[Contributing guide](CONTRIBUTING.md)、[Code of Conduct](CODE_OF_CONDUCT.md)、[Governance](GOVERNANCE.md)を参照してください。通常変更はDraft PR、`./scripts/verify`、リスクに応じたDB/E2E/security test、green CIを必須とします。
+
+Copyright 2026 Company OS contributors. Licensed under the [Apache License 2.0](LICENSE).
