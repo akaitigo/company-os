@@ -43,7 +43,27 @@ BEGIN
   END IF;
 END;
 $$;
+
 ROLLBACK;
+
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO finance.accounts (tenant_id,id,code,name,account_type,active_from) VALUES
+      ('99999999-9999-4999-8999-999999999999','14141414-1414-4141-8141-141414141414','1000','Cash','asset','2026-04-01'),
+      ('99999999-9999-4999-8999-999999999999','15151515-1515-4151-8151-151515151515','4000','Revenue','revenue','2026-04-01');
+    INSERT INTO finance.posted_journals (tenant_id,id,accounting_date,currency,source_type,source_id,posted_at,posted_by)
+    VALUES ('99999999-9999-4999-8999-999999999999','16161616-1616-4161-8161-161616161616','2026-08-09','JPY','test','17171717-1717-4171-8171-171717171717',now(),'18181818-1818-4181-8181-181818181818');
+    INSERT INTO finance.posted_journal_lines (tenant_id,journal_id,line_number,account_id,debit,credit) VALUES
+      ('99999999-9999-4999-8999-999999999999','16161616-1616-4161-8161-161616161616',1,'14141414-1414-4141-8141-141414141414',100,0),
+      ('99999999-9999-4999-8999-999999999999','16161616-1616-4161-8161-161616161616',2,'15151515-1515-4151-8151-151515151515',0,99);
+    SET CONSTRAINTS ALL IMMEDIATE;
+    RAISE EXCEPTION 'unbalanced journal unexpectedly committed';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'unbalanced journal unexpectedly committed' THEN RAISE; END IF;
+  END;
+END;
+$$;
 
 DO $$
 BEGIN
@@ -64,3 +84,35 @@ BEGIN
   END IF;
 END;
 $$;
+
+BEGIN;
+SET LOCAL ROLE company_os_app;
+SELECT set_config('app.tenant_id', '99999999-9999-4999-8999-999999999999', true);
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('99999999-9999-4999-8999-999999999999','12121212-1212-4121-8121-121212121212','person','Fictional Worker');
+DO $$
+BEGIN
+  PERFORM set_config('app.tenant_id', '77777777-7777-4777-8777-777777777777', true);
+  IF (SELECT count(*) FROM party.parties WHERE id='12121212-1212-4121-8121-121212121212') <> 0 THEN
+    RAISE EXCEPTION 'cross-tenant party leaked through RLS';
+  END IF;
+END;
+$$;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO compliance.published_rule_versions
+(tenant_id,rule_id,version,effective_from,definition,published_at,published_by)
+VALUES ('99999999-9999-4999-8999-999999999999','RULE-TEST-001',1,'2026-04-01','{}',now(),'13131313-1313-4131-8131-131313131313');
+DO $$
+BEGIN
+  BEGIN
+    UPDATE compliance.published_rule_versions SET definition='{"changed":true}'
+    WHERE tenant_id='99999999-9999-4999-8999-999999999999' AND rule_id='RULE-TEST-001' AND version=1;
+    RAISE EXCEPTION 'append-only rule update unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'append-only rule update unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+END;
+$$;
+ROLLBACK;
