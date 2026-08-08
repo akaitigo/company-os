@@ -59,6 +59,9 @@
   "roles": {
     "realm": [
       { "name": "organization-admin" },
+      { "name": "workforce-manager" },
+      { "name": "procurement-buyer" },
+      { "name": "finance-accountant" },
       { "name": "organization-reader" },
       { "name": "workforce-admin" },
       { "name": "procurement-requester" },

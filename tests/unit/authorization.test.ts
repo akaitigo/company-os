@@ -32,4 +32,22 @@ describe('authorization', () => {
       }),
     ).toBe('deny');
   });
+
+  it('separates workforce, procurement, and finance duties', () => {
+    const workforce = { actorId: actor, tenantId: tenantA, roles: ['workforce-manager'] };
+    expect(
+      authorize({
+        principal: workforce,
+        action: 'workforce.attendance.record',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
+    expect(
+      authorize({
+        principal: workforce,
+        action: 'finance.journal.post',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('deny');
+  });
 });

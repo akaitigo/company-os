@@ -19,6 +19,9 @@ export interface AuthorizationRequest {
 const roleActions: Readonly<Record<string, readonly string[]>> = {
   'organization-admin': ['organization.unit.create', 'organization.unit.read'],
   'organization-reader': ['organization.unit.read'],
+  'workforce-manager': ['workforce.attendance.record'],
+  'procurement-buyer': ['procurement.requisition.create'],
+  'finance-accountant': ['finance.journal.post'],
 };
 
 export function authorize(request: AuthorizationRequest): AuthorizationDecision {
