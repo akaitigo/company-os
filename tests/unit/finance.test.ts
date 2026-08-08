@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Journal } from '../../modules/finance/src/index.js';
+import { Journal, Receivable, assertCostAllocation } from '../../modules/finance/src/index.js';
 import { Money, entityId, tenantId } from '../../packages/kernel/src/index.js';
 const journalId = entityId('11111111-1111-4111-8111-111111111111');
 const reversalId = entityId('22222222-2222-4222-8222-222222222222');
@@ -45,5 +45,33 @@ describe('finance journal', () => {
     expect(() => {
       journal.post();
     }).toThrowError(/equal/);
+  });
+  it('tracks partial receipt applications without allowing over-application', () => {
+    const receivable = new Receivable(journalId, tenant, Money.ofMinor(1_000n, 'JPY'));
+    receivable.apply(Money.ofMinor(400n, 'JPY'));
+    expect(receivable.snapshot()).toEqual({ status: 'partial', openMinor: 600n });
+    expect(() => {
+      receivable.apply(Money.ofMinor(601n, 'JPY'));
+    }).toThrowError(/exceeds/);
+    receivable.apply(Money.ofMinor(600n, 'JPY'));
+    expect(receivable.snapshot()).toEqual({ status: 'paid', openMinor: 0n });
+  });
+  it('rejects circular or non-positive cost allocations', () => {
+    expect(() => {
+      assertCostAllocation({
+        sourceCostCenterId: cash,
+        targetCostCenterId: cash,
+        amount: Money.ofMinor(100n, 'JPY'),
+        ruleVersion: 1,
+      });
+    }).toThrowError(/differ/);
+    expect(() => {
+      assertCostAllocation({
+        sourceCostCenterId: cash,
+        targetCostCenterId: revenue,
+        amount: Money.ofMinor(100n, 'JPY'),
+        ruleVersion: 1,
+      });
+    }).not.toThrow();
   });
 });

@@ -54,3 +54,53 @@ export class Journal {
     return { status: this.status, lines: [...this.lines] };
   }
 }
+export type ReceivableStatus = 'open' | 'partial' | 'paid' | 'written_off';
+export class Receivable {
+  private openMinor: bigint;
+  private status: ReceivableStatus = 'open';
+  constructor(
+    readonly id: EntityId,
+    readonly tenantId: TenantId,
+    readonly originalAmount: Money,
+  ) {
+    if (originalAmount.minor <= 0n)
+      throw new DomainError('INVALID_RECEIVABLE_AMOUNT', 'Receivable must be positive');
+    this.openMinor = originalAmount.minor;
+  }
+  apply(amount: Money): void {
+    if (amount.currency !== this.originalAmount.currency)
+      throw new DomainError('CURRENCY_MISMATCH', 'Receipt currency must match receivable');
+    if (amount.minor <= 0n || amount.minor > this.openMinor)
+      throw new DomainError('INVALID_RECEIPT_APPLICATION', 'Application exceeds open amount');
+    this.openMinor -= amount.minor;
+    this.status = this.openMinor === 0n ? 'paid' : 'partial';
+  }
+  writeOff(): void {
+    if (this.status === 'paid' || this.status === 'written_off')
+      throw new DomainError('INVALID_RECEIVABLE_STATE', 'Closed receivable cannot be written off');
+    this.openMinor = 0n;
+    this.status = 'written_off';
+  }
+  snapshot(): { status: ReceivableStatus; openMinor: bigint } {
+    return { status: this.status, openMinor: this.openMinor };
+  }
+}
+export interface CostAllocation {
+  readonly sourceCostCenterId: EntityId;
+  readonly targetCostCenterId: EntityId;
+  readonly amount: Money;
+  readonly ruleVersion: number;
+}
+export function assertCostAllocation(allocation: CostAllocation): void {
+  if (allocation.sourceCostCenterId === allocation.targetCostCenterId)
+    throw new DomainError('INVALID_COST_ALLOCATION', 'Source and target must differ');
+  if (
+    allocation.amount.minor <= 0n ||
+    !Number.isInteger(allocation.ruleVersion) ||
+    allocation.ruleVersion <= 0
+  )
+    throw new DomainError(
+      'INVALID_COST_ALLOCATION',
+      'Allocation amount and rule version must be positive',
+    );
+}

@@ -68,3 +68,38 @@ export class LeaveBalance {
     return this.grantedMinutes - this.reservedMinutes - this.consumedMinutes;
   }
 }
+export type LeaveRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export class LeaveRequest {
+  private status: LeaveRequestStatus = 'pending';
+  constructor(
+    readonly id: EntityId,
+    readonly requesterId: EntityId,
+    readonly minutes: number,
+    private readonly balance: LeaveBalance,
+  ) {
+    this.balance.reserve(minutes);
+  }
+  approve(decidedBy: EntityId): void {
+    if (this.status !== 'pending')
+      throw new DomainError('LEAVE_ALREADY_DECIDED', 'Only pending leave can be approved');
+    if (decidedBy === this.requesterId)
+      throw new DomainError('LEAVE_SOD_VIOLATION', 'Requester cannot approve their own leave');
+    this.balance.approve(this.minutes);
+    this.status = 'approved';
+  }
+  reject(): void {
+    this.release('rejected');
+  }
+  cancel(): void {
+    this.release('cancelled');
+  }
+  snapshot(): { status: LeaveRequestStatus } {
+    return { status: this.status };
+  }
+  private release(status: 'rejected' | 'cancelled'): void {
+    if (this.status !== 'pending')
+      throw new DomainError('LEAVE_ALREADY_DECIDED', 'Only pending leave can be released');
+    this.balance.cancel(this.minutes);
+    this.status = status;
+  }
+}

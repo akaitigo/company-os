@@ -55,3 +55,38 @@ export function assertPaymentSoD(payment: PaymentInstruction): void {
   if (payment.amount.minor <= 0n)
     throw new DomainError('INVALID_PAYMENT_AMOUNT', 'Payment must be positive');
 }
+export type RequisitionStatus = 'draft' | 'submitted' | 'approved' | 'rejected' | 'converted';
+export class Requisition {
+  private status: RequisitionStatus = 'draft';
+  constructor(
+    readonly id: EntityId,
+    readonly tenantId: TenantId,
+    readonly requesterId: EntityId,
+    readonly total: Money,
+  ) {
+    if (total.minor <= 0n)
+      throw new DomainError('INVALID_REQUISITION_TOTAL', 'Requisition total must be positive');
+  }
+  submit(): void {
+    this.transition('draft', 'submitted');
+  }
+  approve(actorId: EntityId): void {
+    if (actorId === this.requesterId)
+      throw new DomainError('REQUISITION_SOD_VIOLATION', 'Requester cannot approve requisition');
+    this.transition('submitted', 'approved');
+  }
+  reject(): void {
+    this.transition('submitted', 'rejected');
+  }
+  convertToPurchaseOrder(): void {
+    this.transition('approved', 'converted');
+  }
+  snapshot(): { status: RequisitionStatus } {
+    return { status: this.status };
+  }
+  private transition(expected: RequisitionStatus, next: RequisitionStatus): void {
+    if (this.status !== expected)
+      throw new DomainError('INVALID_REQUISITION_TRANSITION', `${expected} requisition required`);
+    this.status = next;
+  }
+}
