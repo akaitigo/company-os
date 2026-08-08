@@ -1,0 +1,53 @@
+schema_version: 1
+requirement_id: JP-TAX-002
+title: 法人税に係る帳簿書類の備付け・記録・保存
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 国税庁
+sources:
+  - source_type: official_faq
+    title: No.5930 帳簿書類等の保存期間
+    legal_reference: 法人税法第126条・第150条の2、法人税法施行規則第26条の3・第54条・第59条・第66条・第67条
+    url: https://www.nta.go.jp/taxes/shiraberu/taxanswer/hojin/5930.htm
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 法人
+  conditions: [法人税に係る帳簿および取引書類を作成または受領する]
+  exclusions: []
+  determination: applicable
+obligation: 取引を帳簿へ記録し、帳簿および取引等に関して作成・受領した書類を所定期間保存する。
+prohibited_actions: []
+required_records: [Journal, GeneralLedger, Subledger, FinancialStatement, TransactionDocument]
+required_fields: [取引を再現する会計記録および各法令・帳簿類型の項目]
+retention:
+  period: 原則7年間。対象事業年度に青色繰越欠損金または所定の災害損失がある場合は10年間（2018-04-01前開始事業年度は9年間）
+  trigger: 対象事業年度の確定申告書提出期限の翌日
+  exceptions: [電子保存・スキャナ保存・電子取引は電子帳簿保存法の追加要件に従う]
+deadline: null
+submission_to: 税務調査等における所管税務当局
+electronic_submission: allowed
+system_requirements:
+  - 事業年度、申告期限、欠損・災害損失条件を保持する
+  - 7年・9年・10年ruleを事業年度開始日と条件で選択する
+  - posted journalを上書きせず訂正・反対仕訳で履歴を保持する
+ui_requirements: [保存期限と延長理由を帳簿・書類単位で表示する]
+validations: [閉鎖済み期間のposted journal直接更新を拒否する]
+audit_requirements: [記帳、承認、post、reverse、close、reopen、export、廃棄を記録する]
+rule:
+  effective_to: null
+  calculation: return_due_date_next_day + 7y or conditionally 9y/10y
+  rounding: null
+  output_schema_version: corporate-tax-record-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-FIN-01-00-00, CAP-LGL-03-01-00]
+  systems: [SYS-GL-001, SYS-DOC-001, SYS-RET-001]
+  controls: [CTL-TAX-BOOKS-001]
+  tests: [TEST-JP-TAX-002]
+effective_from: '2018-04-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる国税庁一次情報確認
+expert_review_notes: 法人区分、事業年度、申告状況、欠損金・災害損失条件および電子保存方式は税務専門家レビューを要する。
+

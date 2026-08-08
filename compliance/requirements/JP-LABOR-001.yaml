@@ -1,0 +1,57 @@
+schema_version: 1
+requirement_id: JP-LABOR-001
+title: 年次有給休暇管理簿の作成と保存
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 厚生労働省
+sources:
+  - source_type: official_faq
+    title: 年次有給休暇管理簿について
+    legal_reference: 労働基準法施行規則第24条の7
+    url: https://jsite.mhlw.go.jp/yamaguchi-roudoukyoku/hourei_seido_tetsuzuki/roudoukijun_keiyaku/nennkyuukannribo_01.html
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 年次有給休暇を与える使用者
+  conditions:
+    - 労働者へ年次有給休暇を与える
+  exclusions: []
+  determination: conditional
+obligation: 労働者ごとに時季、日数、基準日を明らかにした年次有給休暇管理簿を作成し保存する。
+prohibited_actions: []
+required_records: [PaidLeaveLedger]
+required_fields: [Worker, 基準日, 取得時季, 取得日数]
+retention:
+  period: 法定5年間。ただし当分の間3年間
+  trigger: 年次有給休暇を与えた期間の満了後
+  exceptions: []
+deadline: null
+submission_to: null
+electronic_submission: not_applicable
+system_requirements:
+  - 労働者ごと、付与期間ごとにledgerを生成する
+  - 基準日、取得日、半日・時間単位を追跡する
+  - 必要時に画面・書面へ出力できる
+ui_requirements:
+  - 法定必須項目を明示し、付与期間ごとに表示する
+validations:
+  - 基準日または取得時季のない確定recordを拒否する
+audit_requirements:
+  - 付与、取得、取消、訂正、出力を記録する
+rule:
+  effective_to: null
+  calculation: disposal_date = leave_period_end + transitional_retention_period
+  rounding: null
+  output_schema_version: paid-leave-ledger-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-WKF-04-04-00]
+  systems: [SYS-TIM-001, SYS-RET-001]
+  controls: [CTL-LABOR-LEAVE-001]
+  tests: [TEST-JP-LABOR-001]
+effective_from: '2019-04-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる厚生労働省一次情報確認
+expert_review_notes: 暫定3年の将来廃止時期を継続監視する。
+

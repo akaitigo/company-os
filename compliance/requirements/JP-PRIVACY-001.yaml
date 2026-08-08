@@ -1,0 +1,77 @@
+schema_version: 1
+requirement_id: JP-PRIVACY-001
+title: 個人データ漏えい等の報告および本人通知
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 個人情報保護委員会
+sources:
+  - source_type: official_guideline
+    title: 個人情報の保護に関する法律についてのガイドライン（通則編）
+    legal_reference: 個人情報保護法第26条、施行規則第7条・第8条
+    url: https://www.ppc.go.jp/personalinfo/legal/guidelines_tsusoku/
+    promulgated_at: null
+    checked_at: '2026-08-09'
+  - source_type: official_faq
+    title: 漏えい等の対応とお役立ち資料
+    legal_reference: 速報・確報期限の公式案内
+    url: https://www.ppc.go.jp/personalinfo/legal/leakAction/
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 報告対象事態に係る個人データ等を取り扱う個人情報取扱事業者
+  conditions:
+    - 要配慮個人情報を含む漏えい等またはそのおそれ
+    - 財産的被害が生じるおそれがある漏えい等またはそのおそれ
+    - 不正目的による漏えい等またはそのおそれ
+    - 本人が1,000人を超える漏えい等またはそのおそれ
+  exclusions:
+    - 委託先が規則に従い委託元へ通知した場合の委員会報告主体に関する例外
+  determination: conditional
+obligation: 報告対象事態を知った場合、委員会へ報告し、本人へ状況に応じて速やかに通知する。
+prohibited_actions: []
+required_records:
+  - IncidentCase
+  - RegulatoryReport
+  - DataSubjectNotification
+required_fields:
+  - 概要
+  - 対象データ項目
+  - 本人数
+  - 原因
+  - 二次被害のおそれ
+  - 本人対応
+  - 公表状況
+  - 再発防止措置
+retention: null
+deadline: 速報は発覚から概ね3〜5日以内、確報は原則30日以内、不正目的のおそれがある場合は60日以内
+submission_to: 個人情報保護委員会または法定の報告先
+electronic_submission: allowed
+system_requirements:
+  - 発覚日時と組織が知った日時を改変不能な履歴として保持する
+  - 規則第7条各号の該当性を個別に評価する
+  - 速報と確報を別versionとして管理する
+  - 委託元・委託先の通知および共同報告状態を追跡する
+ui_requirements:
+  - 期限を起算点とともに表示する
+  - 機微incidentを一般管理者の検索から隔離する
+validations:
+  - 確報を完了する前に必須報告事項の欠落を拒否する
+audit_requirements:
+  - 閲覧、export、報告、通知、訂正を全件記録する
+rule:
+  effective_to: null
+  calculation: report_deadline = awareness_at + applicable_calendar_period
+  rounding: null
+  output_schema_version: ppc-report-v1-unverified
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-LGL-04-01-00, CAP-TEC-04-02-00]
+  systems: [SYS-PRV-001, SYS-SEC-001]
+  controls: [CTL-PRIV-INCIDENT-001]
+  tests: [TEST-JP-PRIVACY-001]
+effective_from: '2022-04-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる公式一次情報確認
+expert_review_notes: 個別事案の報告対象性、報告先、本人通知の代替措置は専門家レビューを要する。
+

@@ -1,0 +1,53 @@
+schema_version: 1
+requirement_id: JP-LABOR-002
+title: 労働者名簿・賃金台帳・労働関係書類の保存
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 厚生労働省
+sources:
+  - source_type: official_faq
+    title: 賃金台帳等の労働契約関係の書類の保存期間は何年ですか
+    legal_reference: 労働基準法第109条、第143条第1項・第3項
+    url: https://www.startup-roudou.mhlw.go.jp/qa/zigyonushi/syuugyoukisoku/q6.html
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 労働者を使用する使用者
+  conditions: [労働基準法上の労働関係記録を作成または受領する]
+  exclusions: []
+  determination: applicable
+obligation: 労働者名簿、賃金台帳および雇入・解雇・災害補償・賃金その他の重要な労働関係書類を保存する。
+prohibited_actions: []
+required_records: [WorkerLedger, WageLedger, EmploymentRecord]
+required_fields: [法令・様式ごとの必要項目]
+retention:
+  period: 法定5年間。ただし当分の間3年間
+  trigger: 記録類型ごとに労働基準法施行規則が定める起算日
+  exceptions: [退職金請求権は5年であり、法的保全等により長期保存が必要な場合がある]
+deadline: null
+submission_to: null
+electronic_submission: not_applicable
+system_requirements:
+  - record typeごとに起算eventを保持する
+  - 法定期間と経過措置期間を別versionのruleとして管理する
+  - 訂正前後と訂正理由を保持する
+ui_requirements: [記録類型、起算日、法定期限、legal holdを表示する]
+validations: [必須項目が欠落した確定台帳を拒否する]
+audit_requirements: [作成、訂正、出力、hold、廃棄を記録する]
+rule:
+  effective_to: null
+  calculation: disposal_date = record_type_trigger + applicable_retention_rule
+  rounding: null
+  output_schema_version: labor-record-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-WKF-03-02-00, CAP-LGL-03-01-00]
+  systems: [SYS-HR-001, SYS-PAY-001, SYS-RET-001]
+  controls: [CTL-LABOR-RECORD-001]
+  tests: [TEST-JP-LABOR-002]
+effective_from: '2020-04-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる厚生労働省一次情報確認
+expert_review_notes: 記録類型ごとの起算日と、請求・紛争・legal holdによる延長は専門家確認を要する。
+

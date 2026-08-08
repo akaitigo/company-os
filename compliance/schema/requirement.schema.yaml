@@ -1,0 +1,96 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+$id: https://company-os.example/schemas/compliance-requirement-v1
+title: Company OS Compliance Requirement
+type: object
+additionalProperties: false
+required:
+  - schema_version
+  - requirement_id
+  - title
+  - jurisdiction
+  - requirement_type
+  - status
+  - authority
+  - sources
+  - applicability
+  - obligation
+  - system_requirements
+  - traceability
+  - effective_from
+  - verified_at
+  - verified_by
+properties:
+  schema_version: { const: 1 }
+  requirement_id: { type: string, pattern: '^JP-[A-Z]+-[0-9]{3}$' }
+  title: { type: string, minLength: 1 }
+  jurisdiction: { const: JP }
+  requirement_type:
+    enum: [legal_obligation, legal_prohibition, official_guidance, internal_control, product_policy]
+  status:
+    enum: [verified, unverified, expert_review_required, superseded]
+  authority: { type: string, minLength: 1 }
+  sources:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      additionalProperties: false
+      required: [source_type, title, legal_reference, url, checked_at]
+      properties:
+        source_type: { enum: [act, cabinet_order, ordinance, notice, official_guideline, official_faq] }
+        title: { type: string }
+        legal_reference: { type: string }
+        url: { type: string, format: uri }
+        promulgated_at: { type: [string, 'null'], format: date }
+        checked_at: { type: string, format: date }
+  applicability:
+    type: object
+    additionalProperties: false
+    required: [subject, conditions, exclusions, determination]
+    properties:
+      subject: { type: string }
+      conditions: { type: array, items: { type: string } }
+      exclusions: { type: array, items: { type: string } }
+      determination: { enum: [applicable, conditional, not_applicable, undetermined] }
+  obligation: { type: string, minLength: 1 }
+  prohibited_actions: { type: array, items: { type: string } }
+  required_records: { type: array, items: { type: string } }
+  required_fields: { type: array, items: { type: string } }
+  retention:
+    type: [object, 'null']
+    additionalProperties: false
+    required: [period, trigger, exceptions]
+    properties:
+      period: { type: string }
+      trigger: { type: string }
+      exceptions: { type: array, items: { type: string } }
+  deadline: { type: [string, 'null'] }
+  submission_to: { type: [string, 'null'] }
+  electronic_submission: { enum: [allowed, required, unavailable, not_applicable, undetermined] }
+  system_requirements: { type: array, minItems: 1, items: { type: string } }
+  ui_requirements: { type: array, items: { type: string } }
+  validations: { type: array, items: { type: string } }
+  audit_requirements: { type: array, items: { type: string } }
+  rule:
+    type: object
+    additionalProperties: false
+    properties:
+      effective_to: { type: [string, 'null'], format: date }
+      calculation: { type: [string, 'null'] }
+      rounding: { type: [string, 'null'] }
+      output_schema_version: { type: string }
+      test_case_version: { type: string }
+  traceability:
+    type: object
+    additionalProperties: false
+    required: [capabilities, systems, controls, tests]
+    properties:
+      capabilities: { type: array, minItems: 1, items: { type: string, pattern: '^CAP-' } }
+      systems: { type: array, minItems: 1, items: { type: string, pattern: '^SYS-' } }
+      controls: { type: array, items: { type: string, pattern: '^CTL-' } }
+      tests: { type: array, minItems: 1, items: { type: string, pattern: '^TEST-' } }
+  effective_from: { type: string, format: date }
+  verified_at: { type: string, format: date }
+  verified_by: { type: string }
+  expert_review_notes: { type: [string, 'null'] }
+

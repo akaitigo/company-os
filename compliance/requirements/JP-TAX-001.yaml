@@ -1,0 +1,66 @@
+schema_version: 1
+requirement_id: JP-TAX-001
+title: 電子取引の取引情報に係る電磁的記録の保存
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 国税庁
+sources:
+  - source_type: official_faq
+    title: 電子帳簿保存法一問一答 電子取引関係（通則）
+    legal_reference: 電子帳簿保存法第7条（現行案内）、同法第2条第6号、施行規則第4条等
+    url: https://www.nta.go.jp/law/joho-zeikaishaku/sonota/jirei/07denshi/01.htm
+    promulgated_at: null
+    checked_at: '2026-08-09'
+  - source_type: official_faq
+    title: 電子帳簿保存法一問一答 電子取引関係（適用要件）
+    legal_reference: 真実性・可視性・検索要件
+    url: https://www.nta.go.jp/law/joho-zeikaishaku/sonota/jirei/07denshi/02.htm
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 所得税または法人税に係る保存義務者
+  conditions:
+    - 注文書、契約書、請求書、領収書等に通常記載される取引情報を電磁的方式で授受する
+  exclusions: []
+  determination: conditional
+obligation: 電子取引の取引情報を、適用される真実性・可視性・検索等の要件に従い保存する。
+prohibited_actions:
+  - 電子メール上で閲覧できるだけの状態を保存完了として扱うこと
+required_records: [ElectronicTransactionRecord, PreservationEvidence]
+required_fields: [取引年月日, 取引金額, 取引先, 原データ, 訂正削除に関する情報]
+retention:
+  period: 基礎となる各税法の保存期間に従う（要件別にTASK-004で追加確認）
+  trigger: 対象となる課税期間・事業年度および各税法の起算点
+  exceptions:
+    - 検索要件等には事業規模・出力対応による例外があるため別ruleで管理
+deadline: null
+submission_to: 税務調査時のダウンロード要求等
+electronic_submission: allowed
+system_requirements:
+  - 原データと取引metadataを関連付ける
+  - 訂正削除防止または事務処理規程に基づく履歴を保持する
+  - 見読可能性と適用される検索機能を提供する
+  - system概要書・操作説明等をversion付きで保持する
+ui_requirements:
+  - 保存完了、隔離、要補正を区別する
+validations:
+  - 必須検索項目と原データが欠けたrecordを保存完了にしない
+audit_requirements:
+  - 取込、訂正、削除、検索、download提供を記録する
+rule:
+  effective_to: null
+  calculation: null
+  rounding: null
+  output_schema_version: e-record-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-LGL-03-01-00, CAP-PTP-05-01-00]
+  systems: [SYS-DOC-001, SYS-RET-001, SYS-AP-001]
+  controls: [CTL-TAX-ERECORD-001]
+  tests: [TEST-JP-TAX-001]
+effective_from: '2024-01-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる国税庁一次情報確認
+expert_review_notes: 保存期間、検索要件の免除・猶予、2027年施行予定改正の適用は税務専門家レビューを要する。
+

@@ -1,0 +1,58 @@
+schema_version: 1
+requirement_id: JP-LABOR-003
+title: 36協定および時間外・休日労働の上限管理
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 厚生労働省
+sources:
+  - source_type: official_guideline
+    title: 時間外・休日労働と割増賃金
+    legal_reference: 労働基準法第36条、第106条、附則第139条〜第142条
+    url: https://www.check-roudou.mhlw.go.jp/study/roudousya_jikangai.html
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 法定労働時間を超える労働または法定休日労働を行わせる使用者
+  conditions: [対象事業場・労働者に時間外または休日労働を行わせる]
+  exclusions: [新技術・新商品・新役務の研究開発業務等、法令上の除外]
+  determination: conditional
+obligation: 事前に適法な過半数代表者等と36協定を締結・届出・周知し、適用される上限内で時間外・休日労働を管理する。
+prohibited_actions:
+  - 有効な36協定なく法定時間外・休日労働を命じること
+  - 適用される絶対上限を超えること
+required_records: [LaborManagementAgreement, RepresentativeSelectionEvidence, OvertimeAccumulator]
+required_fields: [事業場, 対象業務, 対象期間, 起算日, 限度時間, 特別条項, 過半数代表者選出根拠, 届出・周知状態]
+retention:
+  period: 関連労働書類としてJP-LABOR-002のruleを参照
+  trigger: 協定有効期間等の記録類型別起算日
+  exceptions: []
+deadline: 時間外・休日労働を行わせる前に締結・届出
+submission_to: 所轄労働基準監督署長
+electronic_submission: allowed
+system_requirements:
+  - 事業場・労働者・業務・期間ごとに適用ruleを決定する
+  - 原則月45時間・年360時間を監視する
+  - 特別条項でも年720時間、単月100時間未満、2〜6か月平均80時間以内、月45時間超は年6か月以内を監視する
+  - 変形労働時間制、業務別特則、適用除外をversion ruleとして分離する
+ui_requirements: [上限に対する現在値、予測、根拠rule、警告・禁止を表示する]
+validations:
+  - 36協定の有効性・届出状態を確認できない時間外命令をfail closedにする
+  - 単月100時間以上となる入力を確定不可にする
+audit_requirements: [協定version、選出証跡、届出、周知、警告、override試行を記録する]
+rule:
+  effective_to: null
+  calculation: worker and establishment scoped rolling/monthly/yearly overtime aggregation
+  rounding: 労働時間の一律な日次切捨てを行わない
+  output_schema_version: overtime-control-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-WKF-04-03-00, CAP-GOV-02-02-00]
+  systems: [SYS-TIM-001, SYS-RUL-001, SYS-GRC-001]
+  controls: [CTL-LABOR-OVERTIME-001]
+  tests: [TEST-JP-LABOR-003]
+effective_from: '2019-04-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる厚生労働省一次情報確認
+expert_review_notes: 建設、自動車運転、医師等の2024年以降の特則と各労働時間制度は個別rule・専門家レビューを要する。
+

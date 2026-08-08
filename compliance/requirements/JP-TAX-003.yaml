@@ -1,0 +1,53 @@
+schema_version: 1
+requirement_id: JP-TAX-003
+title: 適格請求書の写し等の保存
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 国税庁
+sources:
+  - source_type: official_faq
+    title: 適格請求書の写しの保存期間等（インボイスQ&A 問79）
+    legal_reference: 消費税法第57条の4第6項、消費税法施行令第70条の13第1項・第50条第1項
+    url: https://www.nta.go.jp/taxes/shiraberu/zeimokubetsu/shohi/keigenzeiritsu/pdf/qa/79.pdf
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 適格請求書発行事業者、および仕入税額控除のため請求書等を保存する事業者
+  conditions: [適格請求書を交付・電磁的提供する、または仕入税額控除の対象として受領する]
+  exclusions: []
+  determination: conditional
+obligation: 交付した適格請求書の写しまたは提供した電磁的記録等を所定期間・場所に保存する。
+prohibited_actions: []
+required_records: [QualifiedInvoiceCopy, QualifiedInvoiceElectronicRecord]
+required_fields: [適格請求書として法令が要求する記載事項]
+retention:
+  period: 7年間
+  trigger: 交付・提供日の属する課税期間末日の翌日から2月を経過した日
+  exceptions: []
+deadline: null
+submission_to: null
+electronic_submission: not_applicable
+system_requirements:
+  - 課税期間と交付・提供日から保存起算日を計算する
+  - invoice versionと訂正・返還invoiceを関連付ける
+  - 電磁的提供はJP-TAX-001の保存要件も評価する
+ui_requirements: [適格請求書状態、交付方法、保存期限を表示する]
+validations: [法定記載事項が欠ける文書を適格請求書として確定しない]
+audit_requirements: [発行、提供、訂正、download、廃棄を記録する]
+rule:
+  effective_to: null
+  calculation: retention_start = tax_period_end + 2 months + 1 day; retain 7 years
+  rounding: null
+  output_schema_version: qualified-invoice-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-OTC-05-01-00, CAP-PTP-05-01-00, CAP-LGL-03-01-00]
+  systems: [SYS-BIL-001, SYS-AP-001, SYS-DOC-001, SYS-RET-001]
+  controls: [CTL-TAX-INVOICE-001]
+  tests: [TEST-JP-TAX-003]
+effective_from: '2023-10-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる国税庁一次情報確認
+expert_review_notes: 仕入税額控除の経過措置、免税事業者との取引、簡易課税等は別Requirementとして専門家確認を要する。
+

@@ -1,0 +1,61 @@
+schema_version: 1
+requirement_id: JP-PRIVACY-002
+title: 個人データ第三者提供時の確認・記録・保存
+jurisdiction: JP
+requirement_type: legal_obligation
+status: verified
+authority: 個人情報保護委員会
+sources:
+  - source_type: official_guideline
+    title: 個人情報保護法ガイドライン（第三者提供時の確認・記録義務編）
+    legal_reference: 個人情報保護法第29条・第30条、施行規則第19条〜第25条
+    url: https://www.ppc.go.jp/personalinfo/legal/guidelines_thirdparty/
+    promulgated_at: null
+    checked_at: '2026-08-09'
+applicability:
+  subject: 個人データを第三者へ提供する、または第三者から受領する個人情報取扱事業者
+  conditions:
+    - 法第29条または第30条の確認・記録義務が適用される第三者提供
+  exclusions:
+    - 国等の法第16条第2項各号に掲げる者
+    - 法令に基づく提供等の法第27条第1項各号
+    - 委託・事業承継・共同利用等の法第27条第5項各号
+    - その他ガイドラインが適用除外とする提供
+  determination: conditional
+obligation: 提供・受領に係る所定事項を確認・記録し、作成方法に応じた期間保存する。
+prohibited_actions: []
+required_records: [ThirdPartyDisclosureRecord, ThirdPartyReceiptRecord]
+required_fields: [提供または受領年月日, 提供者または受領者, 本人, 対象データ, 同意または適法性の根拠, 取得経緯]
+retention:
+  period: 契約書等による代替は最後の提供・受領から1年、一括記録は最後の提供・受領から3年、その他は3年
+  trigger: 記録方法に応じ、最後の対象提供・受領日または記録作成日
+  exceptions:
+    - 適用除外となる提供
+deadline: null
+submission_to: null
+electronic_submission: not_applicable
+system_requirements:
+  - 提供ごとに適用除外または根拠を記録する
+  - 記録方法と最後の提供・受領日からdisposal dateを計算する
+ui_requirements:
+  - 提供先、目的、根拠、対象データを確認してから実行する
+validations:
+  - 根拠または適用除外が未選択の第三者提供を拒否する
+audit_requirements:
+  - 提供承認、実行、訂正、開示、廃棄を記録する
+rule:
+  effective_to: null
+  calculation: retention is selected by record_creation_method
+  rounding: null
+  output_schema_version: third-party-record-v1
+  test_case_version: '1'
+traceability:
+  capabilities: [CAP-LGL-04-01-00, CAP-LGL-03-01-00]
+  systems: [SYS-PRV-001, SYS-RET-001]
+  controls: [CTL-PRIV-SHARING-001]
+  tests: [TEST-JP-PRIVACY-002]
+effective_from: '2022-04-01'
+verified_at: '2026-08-09'
+verified_by: Codexによる公式一次情報確認
+expert_review_notes: 提供類型ごとの適用除外判断は専門家レビューを要する。
+
