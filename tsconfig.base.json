@@ -3,6 +3,18 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@company-os/audit": ["modules/audit/src/index.ts"],
+      "@company-os/authorization": ["modules/authorization/src/index.ts"],
+      "@company-os/contracts": ["packages/contracts/src/index.ts"],
+      "@company-os/finance": ["modules/finance/src/index.ts"],
+      "@company-os/integration": ["modules/integration/src/index.ts"],
+      "@company-os/kernel": ["packages/kernel/src/index.ts"],
+      "@company-os/organization": ["modules/organization/src/index.ts"],
+      "@company-os/source-to-pay": ["modules/source-to-pay/src/index.ts"],
+      "@company-os/workforce": ["modules/workforce/src/index.ts"]
+    },
     "lib": ["ES2023"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
