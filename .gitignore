@@ -9,4 +9,4 @@ coverage/
 artifacts/
 playwright-report/
 test-results/
-
+*.tsbuildinfo
