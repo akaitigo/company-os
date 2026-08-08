@@ -5,8 +5,8 @@
 
 ## 現在のフェーズ
 
-- Milestone 0: Company OS Specification v0.1
-- TASK-001〜006とMilestone 0の受け入れ条件が満たされるまで、本格的な機能実装とTASK-007を開始しない。
+- V1.0 implementation（TASK-007 repository bootstrap とPlatform vertical slice）
+- Milestone 0はcommit `76a5847`で完了済み。`docs/plans/v1-features.json`を実装進捗の正本とする。
 - 法令・制度に関する断定は、確認日付きの公式一次情報を根拠にする。
 - 「確認済み」「未確認」「要専門家レビュー」を区別する。
 
@@ -27,8 +27,9 @@
 
 ## 検証
 
-- 現在の文書フェーズでは、Markdownリンク、識別子、表構造、一次情報URL、確認日を検証する。
-- TASK-007で `./scripts/verify` を導入し、ローカルとCIの正規検証コマンドを統一する。
+- 正規検証は `./scripts/verify`。format、lint、型、unit/architecture、coverage、build、Compose、migration policyを含む。
+- DB変更時は `./scripts/test-integration`、backup/restore変更時は `./scripts/test-restore` も必須。
+- coverageはlines/functions/statements 80%、branches 75%未満で失敗させる。
 - 未実行の検証は理由とリスクを完了報告に記載する。
 
 ## Git / PR
@@ -36,4 +37,3 @@
 - 原則として1 Issue = 1 branch = 1 Draft PRとする。
 - IssueはDefinition of Ready、PRはDefinition of Doneを満たすこと。
 - Codexの独立レビューとCI成功前にReady for reviewまたはmergeへ進めない。
-

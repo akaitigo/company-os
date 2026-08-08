@@ -5,10 +5,10 @@
 
 ## 現在の状態
 
-Milestone 0「Company OS Specification v0.1」の調査・設計段階である。
-TASK-001〜006とMilestone 0の受け入れ条件が完了するまで、プロダクトコードは実装しない。
+Milestone 0「Company OS Specification v0.1」は完了し、V1.0を実装中。
+Platform vertical sliceとしてOrganization Unit、tenant認可、監査intent、transactional outbox、冪等worker projectionを実装済み。Workforce、Source-to-Pay、Finance、Web UIは進行中であり、現時点のリリースはまだV1.0ではない。
 
-委任可能性は現在Level 0。CI、正規検証コマンド、アーキテクチャ境界、テスト基盤が未整備のため、実装作業の委任は行わない。
+委任可能性はLevel 1。正規検証、CI、境界テスト、実DB migration/rollback、backup/restoreは成立したが、Level 1 pilot 3件とE2E安定化が未完了のためLevel 2とは判定しない。
 
 ## 文書
 
@@ -65,4 +65,14 @@ Milestone 0の仕様検証:
 
 このcommandは必須成果物、Requirement YAML/schema fields、ID一意性・参照、Markdown link、System Catalog、Domain Model、ADR、manifestを検証する。Python 3とPyYAMLが必要。
 
-TASK-007でプロダクトコードを含むローカル/CI共通の `./scripts/verify` を導入する。
+プロダクトコードを含むローカル/CI共通の正規検証は `./scripts/verify`。
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+./scripts/verify
+./scripts/test-integration
+./scripts/test-restore
+```
+
+ローカル依存サービスは `docker compose up -d` で起動する。`.env.example`を`.env`へコピーし、placeholder secretは必ず生成値へ置換すること。
