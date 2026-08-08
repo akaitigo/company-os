@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+
+./scripts/verify-spec
+pnpm format:check
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+docker compose config --quiet
+./scripts/check-migrations
+git diff --check
+

@@ -1,0 +1,33 @@
+name: company-os
+services:
+  postgres:
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    environment:
+      POSTGRES_DB: company_os
+      POSTGRES_USER: company_os
+      POSTGRES_PASSWORD: local-development-only
+    ports: ['127.0.0.1:5432:5432']
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./infra/postgres/migrations:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U company_os -d company_os']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6.3@sha256:9b0330756022422149aa6502eb2def8cd47c6e1b000c7c65cdb13e7c0133e992
+    command: ['start-dev', '--health-enabled=true', '--import-realm']
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: local-development-only
+    ports: ['127.0.0.1:8080:8080']
+    volumes:
+      - ./infra/keycloak/company-os-realm.json:/opt/keycloak/data/import/company-os-realm.json:ro
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.157.0@sha256:f2f01157055a9b2aab9df7118e1f1c9abf345e99b23bc7a2bc791db374a7d0f6
+    command: ['--config=/etc/otelcol/config.yaml']
+    volumes: ['./infra/otel/config.yaml:/etc/otelcol/config.yaml:ro']
+    ports: ['127.0.0.1:4317:4317', '127.0.0.1:4318:4318']
+volumes:
+  postgres-data:

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+mkdir -p artifacts
+backup="artifacts/company-os-restore-smoke.sql"
+docker compose exec -T postgres pg_dump -U company_os --clean --if-exists company_os > "$backup"
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d postgres -c 'DROP DATABASE company_os WITH (FORCE)'
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d postgres -c 'CREATE DATABASE company_os OWNER company_os'
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os < "$backup"
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os -f /docker-entrypoint-initdb.d/0001_platform.verify.sql
+

@@ -1,0 +1,7 @@
+# Governance
+
+Company OSはmaintainer-led projectです。通常変更はreview済みPRとgreen CIで決定します。architecture、security boundary、データ保持、公開API互換性、licenseの変更はADRとmaintainer承認を必要とします。
+
+法令カタログは法的助言ではありません。適用判断はversion、jurisdiction、effective period、根拠を保持し、必要に応じて有資格専門家のreviewを受けます。単独maintainerが自身のpayment approvalなどSoD対象の業務判断を承認する設計変更は受け入れません。
+
+releaseはsemantic versioningを用います。security修正は影響範囲に応じて非公開で準備し、修正版とadvisoryを協調公開します。

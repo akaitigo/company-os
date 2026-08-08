@@ -1,0 +1,6 @@
+vulnerabilities:
+  - id: CVE-2025-68121
+    paths:
+      - usr/local/bin/gosu
+    expired_at: 2026-09-01
+    statement: Official PostgreSQL entrypoint uses gosu only for local UID switching before the database starts; affected TLS session resumption code is unreachable.

@@ -1,0 +1,23 @@
+name: 機能実装
+description: Definition of Readyを満たす単一目的の実装Issue
+body:
+  - type: textarea
+    id: problem
+    attributes: { label: 問題, description: 利用者または運用上の結果として記載してください }
+    validations: { required: true }
+  - type: textarea
+    id: evidence
+    attributes: { label: 根拠・再現方法 }
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes: { label: 期待する結果・受け入れ条件 }
+    validations: { required: true }
+  - type: textarea
+    id: non_goals
+    attributes: { label: 非目標 }
+    validations: { required: true }
+  - type: textarea
+    id: risk
+    attributes: { label: データ・API・権限・外部通信・rollback }
+    validations: { required: true }

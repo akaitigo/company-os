@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@company-os/audit": ["modules/audit/src/index.ts"],
+      "@company-os/authorization": ["modules/authorization/src/index.ts"],
+      "@company-os/contracts": ["packages/contracts/src/index.ts"],
+      "@company-os/finance": ["modules/finance/src/index.ts"],
+      "@company-os/integration": ["modules/integration/src/index.ts"],
+      "@company-os/identity": ["modules/identity/src/index.ts"],
+      "@company-os/workflow": ["modules/workflow/src/index.ts"],
+      "@company-os/documents": ["modules/documents/src/index.ts"],
+      "@company-os/compliance": ["modules/compliance/src/index.ts"],
+      "@company-os/kernel": ["packages/kernel/src/index.ts"],
+      "@company-os/organization": ["modules/organization/src/index.ts"],
+      "@company-os/source-to-pay": ["modules/source-to-pay/src/index.ts"],
+      "@company-os/workforce": ["modules/workforce/src/index.ts"]
+    },
+    "lib": ["ES2023"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "skipLibCheck": true
+  }
+}

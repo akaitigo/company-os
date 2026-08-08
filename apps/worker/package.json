@@ -1,0 +1,17 @@
+{
+  "name": "@company-os/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b",
+    "start": "node dist/main.js"
+  },
+  "dependencies": {
+    "pg": "8.18.0",
+    "zod": "4.3.5"
+  },
+  "devDependencies": {
+    "@types/pg": "8.16.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "files": [],
+  "references": [
+    { "path": "apps/api" },
+    { "path": "apps/worker" },
+    { "path": "apps/web" },
+    { "path": "packages/kernel" },
+    { "path": "packages/contracts" },
+    { "path": "modules/organization" },
+    { "path": "modules/authorization" },
+    { "path": "modules/audit" },
+    { "path": "modules/integration" },
+    { "path": "modules/identity" },
+    { "path": "modules/workflow" },
+    { "path": "modules/documents" },
+    { "path": "modules/compliance" },
+    { "path": "modules/workforce" },
+    { "path": "modules/source-to-pay" },
+    { "path": "modules/finance" }
+  ]
+}

@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+trivy_image='aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f'
+
+pnpm audit --prod --audit-level high
+mkdir -p artifacts
+docker run --rm \
+  -v "$repo_dir:/src:ro" \
+  -v "$repo_dir/artifacts:/output" \
+  -v company-os-trivy-cache:/root/.cache/trivy \
+  "$trivy_image" fs \
+  --quiet --skip-version-check \
+  --scanners vuln,misconfig,secret \
+  --severity HIGH,CRITICAL \
+  --ignore-unfixed \
+  --exit-code 1 \
+  --skip-dirs /src/.git --skip-dirs /src/node_modules --skip-dirs /src/artifacts \
+  /src
+docker run --rm \
+  -v "$repo_dir:/src:ro" \
+  -v "$repo_dir/artifacts:/output" \
+  -v company-os-trivy-cache:/root/.cache/trivy \
+  "$trivy_image" fs --quiet --skip-version-check --format cyclonedx --output /output/company-os.cdx.json \
+  --skip-dirs /src/.git --skip-dirs /src/node_modules --skip-dirs /src/artifacts /src
+
+while IFS= read -r image; do
+  report_name="$(printf '%s' "$image" | tr -c '[:alnum:].-' '_')"
+  docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$repo_dir/artifacts:/output" \
+    -v company-os-trivy-cache:/root/.cache/trivy \
+    "$trivy_image" image --quiet --skip-version-check --severity HIGH,CRITICAL \
+    --ignore-unfixed --format json --output "/output/container-${report_name}.json" "$image"
+  docker run --rm \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    -v "$repo_dir/.trivyignore.yaml:/etc/trivy/.trivyignore.yaml:ro" \
+    -v company-os-trivy-cache:/root/.cache/trivy \
+    "$trivy_image" image --quiet --skip-version-check --severity CRITICAL --ignore-unfixed \
+    --ignorefile /etc/trivy/.trivyignore.yaml --format json --output /tmp/critical.json \
+    --exit-code 1 "$image"
+done < <(docker compose config --images | sort -u)
+
+test -s artifacts/company-os.cdx.json

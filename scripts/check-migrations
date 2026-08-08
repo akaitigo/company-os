@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+mapfile -t migrations < <(find "$repo_dir/infra/postgres/migrations" -maxdepth 1 -type f -name '[0-9]*.sql' ! -name '*.verify.sql' | sort)
+
+if [[ ${#migrations[@]} -eq 0 ]]; then
+  echo "No migrations found" >&2
+  exit 1
+fi
+
+previous=""
+for migration in "${migrations[@]}"; do
+  current="$(basename "$migration")"
+  if [[ -n "$previous" && "$current" < "$previous" ]]; then
+    echo "Migration order is not monotonic: $current" >&2
+    exit 1
+  fi
+  if grep -Eiq 'DROP[[:space:]]+(TABLE|SCHEMA|DATABASE)|TRUNCATE[[:space:]]' "$migration"; then
+    echo "Destructive SQL is forbidden in forward migrations: $current" >&2
+    exit 1
+  fi
+  previous="$current"
+done
+
+echo "Migration policy passed: ${#migrations[@]} forward migration(s)"
+
