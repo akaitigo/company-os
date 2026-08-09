@@ -54,6 +54,9 @@ flowchart LR
 | THR-AUD-001 | adminがaudit/holdを削除 | 証拠隠滅 | append-only role separation、integrity chain/WORM評価 | independent export/checkpoint | tamper detection test |
 | THR-OPS-001 | support impersonation濫用 | C4漏えい/不正操作 | default disabled、customer approval、purpose、session recording | real-time notice/review | expired/out-of-scope test |
 | THR-SUP-001 | malicious dependency/build | 全system侵害 | lockfile、least CI token、SBOM、signature/provenance | scan/rebuild | provenance verification |
+| THR-MIG-001 | 改変・欠落したmigrationを適用 | schema/data integrity侵害 | release checksum、filename/version一意、owner限定 | DB ledgerとdrift status | checksum/filename negative test |
+| THR-MIG-002 | 並行deployまたは中断後の誤再実行 | 二重DDL、不完全schema、停止 | DB advisory lock、transaction、running state | verifyによるrecover、failed停止 | concurrency/interruption test |
+| THR-MIG-003 | backupなしの本番migrationまたはowner credential漏洩 | 復旧不能、DB全権侵害 | backup evidence gate、secret manager/passfile、runtime role分離 | break-glass変更記録、ledger、restore演習 | production gate/privilege/restore test |
 | THR-DOS-001 | unbounded report/export/rule evaluation | availability/cost | NFR limits、async quotas、cancellation | saturation metrics | load/limit test |
 
 ## Abuse cases
@@ -63,6 +66,7 @@ flowchart LR
 - operatorがexternal acknowledgmentを手動で成功へ変更する。
 - attackerがCSV formulaでexport閲覧者の端末からdataを送信する。
 - 法令sourceが更新された後も古いruleが「確認済み」と表示される。
+- operatorが空または無関係なfileをbackup evidenceとして本番migrationを開始する。
 - Legal Hold解除とretention jobが競合し、保持対象が削除される。
 
 ## Security gates

@@ -27,6 +27,7 @@ docker compose up -d --wait
 ./scripts/verify
 ./scripts/test-integration
 ./scripts/test-restore
+./scripts/migrate status
 pnpm exec playwright install chromium
 ./scripts/test-e2e
 ```

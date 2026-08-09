@@ -6,10 +6,14 @@
 
 ## Deploy
 
-1. backup取得とrestore rehearsal成功を確認する。
-2. immutable image digest、SBOM、security scan、CI結果をreleaseへ紐付ける。
-3. forward migrationをowner roleで適用し、各`*.verify.sql`を実行する。
-4. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
+1. owner接続で`./scripts/migrate status`を実行する。`untracked_existing`は一度だけ`adopt`し、`drift`・`running`・`failed`は解消するまでdeployを停止する。
+2. secret managerから32文字以上の`MIGRATION_BACKUP_SIGNING_KEY`を注入し、PostgreSQLと同版の`pg_dump`を使う`./scripts/backup`でbackup artifactとHMAC署名manifestを生成してrestore rehearsal成功を確認する。本番の`apply`/`adopt`/`recover`は署名、対象DB名、24時間以内の取得時刻、archive形式、artifact SHA-256が一致するmanifestだけを受理する。緊急時のみ`MIGRATION_ALLOW_WITHOUT_BACKUP=true`を外部変更記録付きで使う。
+3. `DEPLOYMENT_PROFILE=SMB MIGRATION_BACKUP_EVIDENCE=/secure/path/database.dump.manifest ./scripts/migrate apply`をowner roleで実行する。DEV Composeは`./scripts/migrate apply`、外部DB/VM/Kubernetes jobは`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`またはpassfile、`MIGRATION_DATABASE`を注入して同じcommandを使う。台帳導入前のN-1環境は、実際に導入済みのversionを`MIGRATION_ADOPT_THROUGH=0006 ./scripts/migrate adopt`のように明示してから`apply`する。
+4. `migration_state=applied`とapplication smoke testを確認する。
+5. immutable image digest、SBOM、security scan、CI結果をreleaseへ紐付ける。
+6. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
+
+`status`はDBを書き換えません。runnerはDB単位のadvisory lock、SHA-256 ledger、各migrationのverify SQLで二重実行・改変・不完全適用を拒否します。`running`はprocess中断の可能性を示すため`./scripts/migrate recover`でschemaを検証し、成功時のみ`applied`、不一致時は`failed`にします。`apply`はfailed行そのものを再実行せず、より新しい未登録のforward-fixだけを適用できます（failedが残るため終了statusは非zero）。その後`recover`で元のverifyを再検証します。release済みSQLは編集せず、新しいforward migrationを追加して`checksums.sha256`を更新します。
 
 ## Rollback / forward-fix
 
@@ -17,7 +21,7 @@ migration fileは変更・削除しません。schema変更後の旧binary互換
 
 ## Backup / recovery
 
-PostgreSQLは暗号化backupとPITR、外部S3-compatible object storeはversioning/replicationをproduction要件とします。MinIO Communityのprebuilt imageは2026年に保守終了したため同梱しません。`./scripts/test-restore`がlogical backupのrestoreを検証します。復旧後はtenant policy、journal balance、append-only trigger、outbox未処理件数、object checksumを確認します。
+PostgreSQLは暗号化backupとPITR、外部S3-compatible object storeはversioning/replicationをproduction要件とします。MinIO Communityのprebuilt imageは2026年に保守終了したため同梱しません。`./scripts/test-restore`がlogical backupのrestoreを検証し、`./scripts/test-migration-runner`がclean/N-1/adoption/drift/中断/排他/backup gateを実DBで検証します。復旧後はtenant policy、journal balance、append-only trigger、outbox未処理件数、object checksumを確認します。
 
 ## Incident runbook
 

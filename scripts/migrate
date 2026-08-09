@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+migration_dir="$repo_dir/infra/postgres/migrations"
+mode="${1:-status}"
+case "$mode" in status|apply|adopt|recover) ;; *)
+  echo 'Usage: scripts/migrate {status|apply|adopt|recover}' >&2
+  exit 64
+esac
+
+mapfile -t migrations < <(
+  find "$migration_dir" -maxdepth 1 -type f -name '[0-9]*.sql' ! -name '*.verify.sql' | sort
+)
+[[ ${#migrations[@]} -gt 0 ]] || { echo 'No migrations found.' >&2; exit 1; }
+"$repo_dir/scripts/check-migrations" >/dev/null
+checksum_for() {
+  awk -v filename="$1" '$2 == filename { print $1 }' "$migration_dir/checksums.sha256"
+}
+
+migration_database="${MIGRATION_DATABASE:-company_os}"
+if [[ -n "${PGHOST:-}" ]]; then
+  command -v psql >/dev/null || { echo 'psql is required for external PostgreSQL.' >&2; exit 69; }
+  psql_command=(psql -X -v ON_ERROR_STOP=1 -d "$migration_database")
+else
+  psql_command=(docker compose -f "$repo_dir/compose.yaml" exec -T postgres psql -X -v ON_ERROR_STOP=1 -U company_os -d "$migration_database")
+fi
+psql_run() { "${psql_command[@]}" "$@"; }
+scalar() { psql_run -At -c "$1"; }
+
+ledger_exists="$(scalar "SELECT to_regclass('migration.schema_migrations') IS NOT NULL")"
+business_schema_exists="$(scalar "SELECT to_regclass('organization.units') IS NOT NULL")"
+overall_state='applied'
+if [[ "$ledger_exists" != 't' ]]; then
+  if [[ "$business_schema_exists" == 't' ]]; then overall_state='untracked_existing'; else overall_state='clean'; fi
+else
+  drift_detected=false
+  running_detected=false
+  failed_detected=false
+  while IFS='|' read -r version filename checksum verify_checksum status; do
+    [[ -n "$version" ]] || continue
+    case "$status" in
+      running) running_detected=true ;;
+      failed) failed_detected=true ;;
+    esac
+    migration="$(find "$migration_dir" -maxdepth 1 -type f -name "${version}_*.sql" ! -name '*.verify.sql' -print -quit)"
+    verify_filename="${filename%.sql}.verify.sql"
+    if [[ -z "$migration" || "$(basename "$migration")" != "$filename" || "$(checksum_for "$filename")" != "$checksum" || "$(checksum_for "$verify_filename")" != "$verify_checksum" ]]; then
+      drift_detected=true
+    fi
+  done < <(psql_run -At -F '|' -c 'SELECT version,filename,checksum,verify_checksum,status FROM migration.schema_migrations ORDER BY version')
+  if [[ "$drift_detected" == true ]]; then
+    overall_state='drift'
+  elif [[ "$running_detected" == true ]]; then
+    overall_state='running'
+  elif [[ "$failed_detected" == true ]]; then
+    overall_state='failed'
+  fi
+  if [[ "$overall_state" == 'applied' ]]; then
+    for migration in "${migrations[@]}"; do
+      version="$(basename "$migration" | cut -d_ -f1)"
+      tracked="$(scalar "SELECT EXISTS(SELECT 1 FROM migration.schema_migrations WHERE version='$version' AND status='applied')")"
+      if [[ "$tracked" != 't' ]]; then overall_state='pending'; break; fi
+    done
+  fi
+fi
+
+if [[ "$mode" == 'status' ]]; then
+  printf 'migration_state=%s\n' "$overall_state"
+  if [[ "$ledger_exists" == 't' ]]; then
+    psql_run -P pager=off -c 'SELECT version,filename,status,started_at,finished_at FROM migration.schema_migrations ORDER BY version'
+  fi
+  [[ "$overall_state" != 'drift' && "$overall_state" != 'failed' && "$overall_state" != 'running' ]]
+  exit
+fi
+
+if [[ "$overall_state" == 'drift' ]]; then
+  echo 'Migration checksum drift detected; refusing mutation.' >&2
+  exit 65
+fi
+if [[ "$mode" == 'apply' && "$overall_state" == 'untracked_existing' ]]; then
+  echo 'Existing schema has no migration ledger; run scripts/migrate adopt after backup.' >&2
+  exit 65
+fi
+if [[ "$mode" == 'apply' && "$overall_state" == 'running' ]]; then
+  echo 'Interrupted migration detected; run scripts/migrate recover.' >&2
+  exit 65
+fi
+if [[ "$mode" == 'adopt' && "$overall_state" != 'untracked_existing' ]]; then
+  echo 'Adopt is only valid for an existing untracked schema.' >&2
+  exit 65
+fi
+if [[ "$mode" == 'recover' && "$overall_state" != 'running' && "$overall_state" != 'failed' ]]; then
+  echo 'No interrupted migration requires recovery.' >&2
+  exit 65
+fi
+
+validate_backup_evidence() {
+  local evidence="$1" format database created_at artifact expected signature actual canonical computed created_epoch now_epoch max_age signing_key
+  format="$(awk -F= '$1=="format" {print substr($0,index($0,"=")+1)}' "$evidence")"
+  database="$(awk -F= '$1=="database" {print substr($0,index($0,"=")+1)}' "$evidence")"
+  created_at="$(awk -F= '$1=="created_at" {print substr($0,index($0,"=")+1)}' "$evidence")"
+  artifact="$(awk -F= '$1=="artifact" {print substr($0,index($0,"=")+1)}' "$evidence")"
+  expected="$(awk -F= '$1=="sha256" {print substr($0,index($0,"=")+1)}' "$evidence")"
+  signature="$(awk -F= '$1=="signature" {print substr($0,index($0,"=")+1)}' "$evidence")"
+  signing_key="${MIGRATION_BACKUP_SIGNING_KEY:-}"
+  [[ "$format" == 'company-os-backup-v1' && "$database" == "$migration_database" && -s "$artifact" && "$expected" =~ ^[0-9a-f]{64}$ && "$signature" =~ ^[0-9a-f]{64}$ && ${#signing_key} -ge 32 ]] || return 1
+  canonical="$(printf 'format=%s\ndatabase=%s\ncreated_at=%s\nartifact=%s\nsha256=%s\n' "$format" "$database" "$created_at" "$artifact" "$expected")"
+  computed="$(node -e "const c=require('node:crypto');process.stdout.write(c.createHmac('sha256',process.env.MIGRATION_BACKUP_SIGNING_KEY).update(process.argv[1]).digest('hex'))" "$canonical")"
+  [[ "$computed" == "$signature" ]] || return 1
+  actual="$(sha256sum "$artifact" | cut -d' ' -f1)"
+  [[ "$actual" == "$expected" ]] || return 1
+  if [[ -n "${PGHOST:-}" ]]; then
+    command -v pg_restore >/dev/null || return 1
+    pg_restore --list "$artifact" >/dev/null 2>&1 || return 1
+  else
+    docker compose -f "$repo_dir/compose.yaml" exec -T postgres pg_restore --list < "$artifact" >/dev/null 2>&1 || return 1
+  fi
+  created_epoch="$(date -u -d "$created_at" +%s 2>/dev/null)" || return 1
+  now_epoch="$(date -u +%s)"
+  max_age="${MIGRATION_BACKUP_MAX_AGE_SECONDS:-86400}"
+  [[ "$max_age" =~ ^[0-9]+$ && "$created_epoch" -le "$now_epoch" && $((now_epoch - created_epoch)) -le "$max_age" ]]
+}
+
+if [[ "$mode" != 'status' && "${DEPLOYMENT_PROFILE:-DEV}" != 'DEV' ]]; then
+  if [[ "${MIGRATION_ALLOW_WITHOUT_BACKUP:-false}" != 'true' ]]; then
+    evidence="${MIGRATION_BACKUP_EVIDENCE:-}"
+    if [[ -z "$evidence" || ! -s "$evidence" ]] || ! validate_backup_evidence "$evidence"; then
+      echo 'Production migration requires a valid, current scripts/backup manifest for the target database or the explicit MIGRATION_ALLOW_WITHOUT_BACKUP=true break-glass override.' >&2
+      exit 65
+    fi
+  fi
+fi
+
+bootstrap_sql=$(cat <<'SQL'
+CREATE SCHEMA IF NOT EXISTS migration;
+CREATE TABLE IF NOT EXISTS migration.schema_migrations (
+  version varchar(16) PRIMARY KEY,
+  filename varchar(255) NOT NULL UNIQUE,
+  checksum char(64) NOT NULL,
+  verify_checksum char(64) NOT NULL,
+  status varchar(16) NOT NULL CHECK (status IN ('running','applied','failed')),
+  started_at timestamptz NOT NULL,
+  finished_at timestamptz,
+  error varchar(1000),
+  CHECK ((status='running')=(finished_at IS NULL))
+);
+REVOKE ALL ON SCHEMA migration FROM PUBLIC;
+REVOKE ALL ON migration.schema_migrations FROM PUBLIC;
+SQL
+)
+
+emit_lock_start() {
+  cat <<'SQL'
+\set ON_ERROR_STOP on
+SELECT pg_try_advisory_lock(
+  (SELECT oid::integer FROM pg_database WHERE datname=current_database()),
+  hashtext('company-os:schema-migrations:v1')
+) AS acquired \gset
+\if :acquired
+SQL
+}
+emit_lock_end() {
+  cat <<'SQL'
+SELECT pg_advisory_unlock(
+  (SELECT oid::integer FROM pg_database WHERE datname=current_database()),
+  hashtext('company-os:schema-migrations:v1')
+);
+\else
+\echo 'Another migration runner holds the database lock.'
+DO $$ BEGIN RAISE EXCEPTION 'migration advisory lock unavailable'; END $$;
+\endif
+SQL
+}
+
+if [[ "$mode" == 'apply' ]]; then
+  {
+    emit_lock_start
+    printf '%s\n' "$bootstrap_sql"
+    for migration in "${migrations[@]}"; do
+      filename="$(basename "$migration")"
+      version="${filename%%_*}"
+      checksum="$(checksum_for "$filename")"
+      verify_filename="${filename%.sql}.verify.sql"
+      verify_checksum="$(checksum_for "$verify_filename")"
+      verify="$migration_dir/$verify_filename"
+      cat <<SQL
+DO \$\$ BEGIN
+  IF EXISTS (SELECT 1 FROM migration.schema_migrations WHERE version='$version'
+    AND (checksum<>'$checksum' OR verify_checksum<>'$verify_checksum')) THEN
+    RAISE EXCEPTION 'migration checksum drift for $version';
+  END IF;
+END \$\$;
+SELECT NOT EXISTS(
+  SELECT 1 FROM migration.schema_migrations WHERE version='$version'
+) AS migration_needed \gset
+\if :migration_needed
+INSERT INTO migration.schema_migrations(version,filename,checksum,verify_checksum,status,started_at)
+VALUES ('$version','$filename','$checksum','$verify_checksum','running',clock_timestamp());
+SQL
+      cat "$migration"
+      cat "$verify"
+      cat <<SQL
+UPDATE migration.schema_migrations SET status='applied',finished_at=clock_timestamp(),error=NULL
+ WHERE version='$version' AND status='running';
+\endif
+SQL
+    done
+    emit_lock_end
+  } | psql_run
+elif [[ "$mode" == 'adopt' ]]; then
+  adopt_through="${MIGRATION_ADOPT_THROUGH:-$(basename "${migrations[-1]}" | cut -d_ -f1)}"
+  if ! printf '%s\n' "${migrations[@]}" | sed 's#.*/##; s/_.*//' | grep -Fxq "$adopt_through"; then
+    echo "MIGRATION_ADOPT_THROUGH is not a repository migration version: $adopt_through" >&2
+    exit 65
+  fi
+  {
+    emit_lock_start
+    printf 'BEGIN;\n'
+    printf '%s\n' "$bootstrap_sql"
+    for migration in "${migrations[@]}"; do
+      filename="$(basename "$migration")"
+      version="${filename%%_*}"
+      [[ "$version" > "$adopt_through" ]] && continue
+      checksum="$(checksum_for "$filename")"
+      verify_filename="${filename%.sql}.verify.sql"
+      verify_checksum="$(checksum_for "$verify_filename")"
+      verify="$migration_dir/$verify_filename"
+      cat "$verify"
+      cat <<SQL
+INSERT INTO migration.schema_migrations(version,filename,checksum,verify_checksum,status,started_at,finished_at)
+VALUES ('$version','$filename','$checksum','$verify_checksum','applied',clock_timestamp(),clock_timestamp())
+ON CONFLICT (version) DO NOTHING;
+SQL
+    done
+    printf 'COMMIT;\n'
+    emit_lock_end
+  } | psql_run
+else
+  mapfile -t running_versions < <(
+    psql_run -At -c "SELECT version FROM migration.schema_migrations WHERE status IN ('running','failed') ORDER BY version"
+  )
+  {
+    emit_lock_start
+    for version in "${running_versions[@]}"; do
+      migration="$(find "$migration_dir" -maxdepth 1 -type f -name "${version}_*.sql" ! -name '*.verify.sql' -print -quit)"
+      verify="$migration_dir/$(basename "${migration%.sql}").verify.sql"
+      cat <<SQL
+\set ON_ERROR_STOP off
+SQL
+      cat "$verify"
+      cat <<SQL
+\if :ERROR
+UPDATE migration.schema_migrations SET status='failed',finished_at=clock_timestamp(),
+  error='verification failed during recovery' WHERE version='$version' AND status IN ('running','failed');
+\else
+UPDATE migration.schema_migrations SET status='applied',finished_at=clock_timestamp(),error=NULL
+ WHERE version='$version' AND status IN ('running','failed');
+\endif
+\set ON_ERROR_STOP on
+SQL
+    done
+    emit_lock_end
+  } | psql_run
+fi
+
+"$0" status

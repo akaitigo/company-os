@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+docker compose up -d --wait postgres
+
+export PGHOST=127.0.0.1 PGPORT=5432 PGUSER=company_os PGPASSWORD=local-development-only
+export MIGRATION_BACKUP_SIGNING_KEY='test-only-migration-backup-signing-key'
+prefix="migration_test_${$}"
+databases=("${prefix}_clean" "${prefix}_adopt" "${prefix}_n1" "${prefix}_recover" "${prefix}_lock")
+admin=(psql -X -v ON_ERROR_STOP=1 -d postgres)
+cleanup() {
+  for database in "${databases[@]}"; do
+    "${admin[@]}" -c "DROP DATABASE IF EXISTS \"$database\" WITH (FORCE)" >/dev/null 2>&1 || true
+  done
+}
+trap cleanup EXIT
+for database in "${databases[@]}"; do
+  "${admin[@]}" -c "CREATE DATABASE \"$database\" OWNER company_os" >/dev/null
+done
+
+run_migrate() { MIGRATION_DATABASE="$1" ./scripts/migrate "$2"; }
+sql() { psql -X -v ON_ERROR_STOP=1 -d "$1" "${@:2}"; }
+expect_state() {
+  output="$(run_migrate "$1" status)"
+  grep -q "migration_state=$2" <<<"$output"
+}
+
+# Clean install and production backup gate.
+expect_state "${prefix}_clean" clean
+if DEPLOYMENT_PROFILE=SMB MIGRATION_DATABASE="${prefix}_clean" ./scripts/migrate apply >/dev/null 2>&1; then
+  echo 'Production apply succeeded without backup evidence.' >&2
+  exit 1
+fi
+backup_dir="$(mktemp -d)"
+trap 'rm -rf "$backup_dir"; cleanup' EXIT
+evidence="$(PGHOST= BACKUP_OUTPUT_DIR="$backup_dir" MIGRATION_DATABASE="${prefix}_clean" ./scripts/backup)"
+PGHOST= DEPLOYMENT_PROFILE=SMB MIGRATION_BACKUP_EVIDENCE="$evidence" MIGRATION_DATABASE="${prefix}_clean" ./scripts/migrate apply >/dev/null
+expect_state "${prefix}_clean" applied
+[[ "$(sql "${prefix}_clean" -At -c "SELECT has_schema_privilege('company_os_app','migration','USAGE') OR has_table_privilege('company_os_app','migration.schema_migrations','SELECT')")" == 'f' ]]
+
+# Existing current schema must be explicitly verified and adopted.
+for migration in infra/postgres/migrations/[0-9]*.sql; do
+  [[ "$migration" == *.verify.sql ]] || sql "${prefix}_adopt" -f "$migration" >/dev/null
+done
+expect_state "${prefix}_adopt" untracked_existing
+run_migrate "${prefix}_adopt" adopt >/dev/null
+expect_state "${prefix}_adopt" applied
+
+# N-1 adoption verifies what exists, fails closed at current, then apply resumes current.
+for migration in infra/postgres/migrations/000{1..6}_*.sql; do
+  [[ "$migration" == *.verify.sql ]] || sql "${prefix}_n1" -f "$migration" >/dev/null
+done
+if run_migrate "${prefix}_n1" adopt >/dev/null 2>&1; then
+  echo 'N-1 adoption unexpectedly accepted a missing current schema.' >&2
+  exit 1
+fi
+expect_state "${prefix}_n1" untracked_existing
+MIGRATION_ADOPT_THROUGH=0006 MIGRATION_DATABASE="${prefix}_n1" ./scripts/migrate adopt >/dev/null
+run_migrate "${prefix}_n1" apply >/dev/null
+expect_state "${prefix}_n1" applied
+
+# Checksum drift is detected before any mutation.
+sql "${prefix}_n1" -c "UPDATE migration.schema_migrations SET checksum=repeat('0',64) WHERE version='0001'" >/dev/null
+if run_migrate "${prefix}_n1" status >/dev/null 2>&1; then
+  echo 'Checksum drift was not rejected.' >&2
+  exit 1
+fi
+sql "${prefix}_n1" -c "UPDATE migration.schema_migrations SET filename='0001_platform.sql', verify_checksum=repeat('0',64) WHERE version='0001'" >/dev/null
+if run_migrate "${prefix}_n1" status >/dev/null 2>&1; then
+  echo 'Verification checksum drift was not rejected.' >&2
+  exit 1
+fi
+sql "${prefix}_n1" -c "UPDATE migration.schema_migrations SET checksum='e040a073e30bd0820825932c4d61a4a71e79d2ecc6d24419244b625357a635df', filename='renamed.sql' WHERE version='0001'" >/dev/null
+if run_migrate "${prefix}_n1" status >/dev/null 2>&1; then
+  echo 'Filename drift was not rejected.' >&2
+  exit 1
+fi
+
+# A crash gap is resolved from schema verification, without replaying committed SQL.
+run_migrate "${prefix}_recover" apply >/dev/null
+sql "${prefix}_recover" -c "UPDATE migration.schema_migrations SET status='running',finished_at=NULL WHERE version='0007'" >/dev/null
+run_migrate "${prefix}_recover" recover >/dev/null
+[[ "$(sql "${prefix}_recover" -At -c "SELECT status FROM migration.schema_migrations WHERE version='0007'")" == 'applied' ]]
+sql "${prefix}_recover" -c "DROP TABLE workforce.attendance_period_events CASCADE; UPDATE migration.schema_migrations SET status='running',finished_at=NULL WHERE version='0007'" >/dev/null
+if run_migrate "${prefix}_recover" recover >/dev/null 2>&1; then
+  echo 'Recovery unexpectedly accepted a schema that failed verification.' >&2
+  exit 1
+fi
+[[ "$(sql "${prefix}_recover" -At -c "SELECT status FROM migration.schema_migrations WHERE version='0007'")" == 'failed' ]]
+failed_started_at="$(sql "${prefix}_recover" -At -c "SELECT started_at FROM migration.schema_migrations WHERE version='0007'")"
+run_migrate "${prefix}_recover" apply >/dev/null 2>&1 || true
+[[ "$(sql "${prefix}_recover" -At -c "SELECT status || '|' || started_at FROM migration.schema_migrations WHERE version='0007'")" == "failed|$failed_started_at" ]]
+
+# A concurrent session holding the same database lock makes the runner fail fast.
+sql "${prefix}_lock" -c "SELECT pg_advisory_lock((SELECT oid::integer FROM pg_database WHERE datname=current_database()),hashtext('company-os:schema-migrations:v1')); SELECT pg_sleep(10)" >/dev/null &
+lock_pid=$!
+for _ in {1..30}; do
+  [[ "$(sql "${prefix}_lock" -At -c "SELECT count(*) FROM pg_locks WHERE locktype='advisory' AND granted")" != '0' ]] && break
+  sleep 0.1
+done
+if run_migrate "${prefix}_lock" apply >/dev/null 2>&1; then
+  echo 'Concurrent migration runner was not rejected.' >&2
+  wait "$lock_pid"
+  exit 1
+fi
+wait "$lock_pid"
+
+echo 'Migration runner tests passed: clean, backup gate, adopt, N-1, drift, recovery, concurrency.'
