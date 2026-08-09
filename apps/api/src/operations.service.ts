@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { authorize } from '@company-os/authorization';
 import type {
   AllocateCostInput,
@@ -20,7 +20,8 @@ import {
   AttendancePeriodTransition,
   AttendanceReview,
 } from '@company-os/workforce';
-import { Pool, type PoolClient } from 'pg';
+import type { PoolClient } from 'pg';
+import { createDatabasePool } from './database-pool.js';
 import { AccessDeniedError } from './organization.service.js';
 
 type CommandResult = Readonly<{ id: string; version: number }>;
@@ -28,13 +29,17 @@ export class OperationConflictError extends Error {}
 export class AttendanceConflictError extends Error {}
 
 @Injectable()
-export class OperationsService {
-  private readonly pool = new Pool({
+export class OperationsService implements OnApplicationShutdown {
+  private readonly pool = createDatabasePool({
     connectionString: process.env['DATABASE_URL'],
     max: 10,
     connectionTimeoutMillis: 3_000,
     idleTimeoutMillis: 30_000,
   });
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.pool.end();
+  }
 
   async recordAttendance(
     input: RecordAttendanceInput,

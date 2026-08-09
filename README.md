@@ -31,6 +31,7 @@ docker compose up -d --wait
 pnpm exec playwright install chromium
 ./scripts/test-e2e
 ./scripts/test-web-container
+./scripts/test-runtime-bundle
 ```
 
 `.env.example`を基に設定し、placeholder credentialは必ず生成値またはworkload identityへ置換してください。demo seedは架空データのみで冪等です。E2E user/passwordは実行時に一時生成され、repositoryへ保存されません。
@@ -38,6 +39,8 @@ pnpm exec playwright install chromium
 Webのproduction buildは検証用checksumを含む`dist/web`を生成します。ローカルとVMは必要なruntime環境変数を注入して`./scripts/start-web`、containerは`infra/containers/web.Dockerfile`を使用します。どちらも同じentrypointとstandalone artifactを起動し、`next start`は使用しません。
 
 本番相当の設定は`infra/config/deployment-contract-v1.json`を正本とします。ネットワークへ接続しない`./scripts/preflight validate`で設定を検査し、変更適用前にread-onlyの`./scripts/preflight check > preflight-evidence.json`でDB権限、OIDC discovery、telemetry、Node版、Web artifactを確認してください。SMB profileはruntime DBとmigration ownerを別credentialにし、両方でTLS `verify-full`を必須とします。詳細は[Operations](docs/OPERATIONS.md)を参照してください。
+
+VM向けproduction runtimeは`infra/runtime/compose.production.yaml`を正本とし、`./scripts/runtime-bundle validate /secure/company-os/runtime.env`から導入します。API/worker/Webのimageはregistry digest指定、secretは`*_FILE` mount、runtimeは非root・read-only・resource制限付きです。
 
 ## Security and supply chain
 

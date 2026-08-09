@@ -6,10 +6,15 @@ cd "$repo_dir"
 artifact_dir="$repo_dir/dist/web"
 temp_dir="$(mktemp -d)"
 server_pid=''
+api_pid=''
 cleanup() {
   if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
     kill -TERM "$server_pid" 2>/dev/null || true
     wait "$server_pid" 2>/dev/null || true
+  fi
+  if [[ -n "$api_pid" ]] && kill -0 "$api_pid" 2>/dev/null; then
+    kill -TERM "$api_pid" 2>/dev/null || true
+    wait "$api_pid" 2>/dev/null || true
   fi
   chmod -R u+w "$artifact_dir" 2>/dev/null || true
   rm -f "$artifact_dir/unexpected-test-file"
@@ -24,7 +29,7 @@ runtime_env=(
   OIDC_ISSUER=http://localhost:8080/realms/company-os
   OIDC_CLIENT_ID=company-os-web
   OIDC_REDIRECT_URI=http://localhost:3100/auth/callback
-  API_INTERNAL_URL=http://127.0.0.1:3001
+  API_INTERNAL_URL=http://127.0.0.1:39001
   WEB_HOST=127.0.0.1
   PORT=3100
 )
@@ -40,6 +45,14 @@ if env "${runtime_env[@]}" OIDC_ISSUER=http://idp.example.invalid/realms/company
   exit 1
 fi
 grep -q 'OIDC_ISSUER must use HTTPS outside loopback' "$temp_dir/url.log"
+
+printf '%s\n\n' 'artifact-test-session-secret-at-least-32-characters' > "$temp_dir/session-secret"
+if env "${runtime_env[@]}" SESSION_SECRET= SESSION_SECRET_FILE="$temp_dir/session-secret" \
+  ./scripts/start-web >"$temp_dir/secret-file.log" 2>&1; then
+  echo 'Web accepted a session secret file with an extra blank line.' >&2
+  exit 1
+fi
+grep -q 'SESSION_SECRET_FILE must contain exactly one non-empty line' "$temp_dir/secret-file.log"
 
 mkdir -p "$temp_dir/missing/apps/web/public"
 cp "$artifact_dir/apps/web/server.js" "$temp_dir/missing/apps/web/server.js"
@@ -69,6 +82,17 @@ fi
 grep -q 'artifact checksum verification failed' "$temp_dir/extra-file.log"
 rm -f "$artifact_dir/unexpected-test-file"
 
+node -e '
+  require("node:http").createServer((request, response) => {
+    if (request.url === "/health/ready") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ status: "ready", service: "api" }));
+      return;
+    }
+    response.writeHead(404).end();
+  }).listen(39001, "127.0.0.1");
+' >"$temp_dir/api.log" 2>&1 &
+api_pid=$!
 chmod -R a-w "$artifact_dir"
 env "${runtime_env[@]}" ./scripts/start-web >"$temp_dir/server.log" 2>&1 &
 server_pid=$!
@@ -83,6 +107,13 @@ headers="$(curl --fail --silent --head http://127.0.0.1:3100/)"
 grep -qi '^content-security-policy:' <<<"$headers"
 ! grep -qi "content-security-policy:.*unsafe-eval" <<<"$headers"
 ! grep -q 'next start.*does not work' "$temp_dir/server.log"
+
+kill -TERM "$api_pid"
+wait "$api_pid" 2>/dev/null || true
+api_pid=''
+readiness_status="$(curl --silent --output "$temp_dir/degraded.json" --write-out '%{http_code}' http://127.0.0.1:3100/api/health/ready)"
+[[ "$readiness_status" == '503' ]]
+jq -e '.status == "degraded" and .service == "web"' "$temp_dir/degraded.json" >/dev/null
 
 kill -TERM "$server_pid"
 for _ in $(seq 1 10); do

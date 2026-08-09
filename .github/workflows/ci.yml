@@ -83,6 +83,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: ./scripts/test-web-container
+  runtime-bundle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+      - run: ./scripts/test-runtime-bundle
   preflight:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
