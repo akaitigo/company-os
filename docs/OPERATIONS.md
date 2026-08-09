@@ -23,6 +23,7 @@ PostgreSQLは暗号化backupとPITR、外部S3-compatible object storeはversion
 
 - IdP/JWKS停止: 新規API requestはfail closed。復旧までwriteを受理しない。
 - DB障害: writeを停止し、primary/restore整合性確認後にworkerを再開する。
+- workerはDB切断時に停止せず、125ms〜30秒のjitter付き指数backoffで再接続する。`GET http://127.0.0.1:3002/health/ready`は切断中503、復旧後200へ自動復帰する。`WORKER_HEALTH_HOST`（既定`0.0.0.0`）と`WORKER_HEALTH_PORT`（既定`3002`）でhealth listenerを設定し、構造化logの`worker.database.disconnected`、`worker.database.retry`、`worker.database.recovered`を監視する。
 - outbox滞留: API正本は維持し、consumerを冪等再実行する。dead-letter前に20回上限を確認する。
 - credential漏洩: revoke/rotate、session無効化、audit範囲特定、security advisory手順を開始する。
 - tenant漏洩疑い: 対象serviceを隔離し、auditを保全し、法務/privacy担当へ非公開連絡する。

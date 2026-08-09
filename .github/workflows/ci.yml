@@ -31,6 +31,22 @@ jobs:
       - run: ./scripts/test-integration
       - if: always()
         run: docker compose logs postgres
+  worker-recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 9.15.9
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: ./scripts/test-worker-recovery
+      - if: always()
+        run: docker compose logs postgres
   e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
