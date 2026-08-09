@@ -1,8 +1,11 @@
 # Company OS
 
-日本企業の組織・雇用・購買・会計・統制を、tenant分離、権限、監査、適用日、保持、再試行まで一つの設計で扱うApache-2.0 OSS reference implementationです。法的・税務・労務上の助言や、日本法への完全適合を保証する製品ではありません。
+日本企業の組織・雇用・購買・会計・統制を、tenant分離、権限、監査、適用日、保持、再試行まで一つの設計で扱うApache-2.0 OSS projectです。法的・税務・労務上の助言や、日本法への完全適合を保証する製品ではありません。
 
-## V1 release candidate scope
+> [!WARNING]
+> `v1.0.0`は技術アーキテクチャを検証したTechnology Previewです。実機確認の結果、既存SaaSを置換できる製品GAではないと判定しました。現在は[Program Issue #10](https://github.com/akaitigo/company-os/issues/10)と[Product PRD](docs/product/PRD.md)に基づき再構築中です。
+
+## Technology Preview scope
 
 - Platform: Organization/Party、Keycloak OIDC + PKCE、RBAC/SoD、Workflow、Documents metadata/retention、versioned Compliance Rules、append-only Audit、outbox/projection。
 - Workforce: employment、attendance corrections、leave request/ledger。
@@ -43,6 +46,10 @@ pnpm exec playwright install chromium
 ## Architecture and operations
 
 - [Architecture](docs/ARCHITECTURE.md)
+- [Product PRD](docs/product/PRD.md)
+- [SaaS replacement parity](docs/product/parity-matrix.md)
+- [Capability evidence model](docs/product/capability-evidence.md)
+- [Product quality loop](docs/product/quality-loop.md)
 - [HTTP API v1](docs/API.md)
 - [Security Boundary](docs/SECURITY_BOUNDARY.md)
 - [Operations / migration / rollback / incident runbook](docs/OPERATIONS.md)
