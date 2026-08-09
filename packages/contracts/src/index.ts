@@ -64,6 +64,79 @@ export const listAttendanceQuerySchema = z
   .strict();
 export type ListAttendanceQuery = z.infer<typeof listAttendanceQuerySchema>;
 
+export const createWorkRuleSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    ruleCode: z
+      .string()
+      .trim()
+      .min(1)
+      .max(32)
+      .regex(/^[A-Z0-9_-]+$/),
+    version: z.number().int().positive().max(10_000),
+    effectiveFrom: isoDateSchema,
+    effectiveTo: isoDateSchema.optional(),
+    timeZone: z.literal('Asia/Tokyo'),
+    scheduledStartMinute: z.number().int().min(0).max(1439),
+    scheduledEndMinute: z.number().int().min(0).max(1439),
+    statutoryDailyMinutes: z.number().int().min(1).max(1440),
+    nightStartMinute: z.number().int().min(0).max(1439),
+    nightEndMinute: z.number().int().min(0).max(1439),
+    statutoryHolidayWeekdays: z.array(z.number().int().min(0).max(6)).max(7),
+    requirementId: z.string().trim().min(1).max(80),
+    controlId: z.string().trim().min(1).max(80),
+    expertReviewStatus: z.enum(['pending', 'approved', 'rejected']),
+  })
+  .strict()
+  .refine((value) => value.effectiveTo === undefined || value.effectiveFrom < value.effectiveTo, {
+    message: 'Effective end must follow start',
+  })
+  .refine((value) => value.scheduledStartMinute !== value.scheduledEndMinute, {
+    message: 'Scheduled boundaries must differ',
+  })
+  .refine((value) => value.nightStartMinute !== value.nightEndMinute, {
+    message: 'Night boundaries must differ',
+  });
+export type CreateWorkRuleInput = z.infer<typeof createWorkRuleSchema>;
+
+export const assignWorkRuleSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    employmentId: uuidSchema,
+    workRuleVersionId: uuidSchema,
+    effectiveFrom: isoDateSchema,
+    effectiveTo: isoDateSchema.optional(),
+  })
+  .strict()
+  .refine((value) => value.effectiveTo === undefined || value.effectiveFrom < value.effectiveTo, {
+    message: 'Effective end must follow start',
+  });
+export type AssignWorkRuleInput = z.infer<typeof assignWorkRuleSchema>;
+
+export const setEmploymentCalendarDaySchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    employmentId: uuidSchema,
+    workDate: isoDateSchema,
+    dayType: z.enum(['working', 'non_working', 'statutory_holiday']),
+    reason: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type SetEmploymentCalendarDayInput = z.infer<typeof setEmploymentCalendarDaySchema>;
+
+export const listWorkRulesQuerySchema = z
+  .object({ limit: z.coerce.number().int().min(1).max(100).default(25) })
+  .strict();
+export type ListWorkRulesQuery = z.infer<typeof listWorkRulesQuerySchema>;
+
+export const activateWorkingTimeEnforcementSchema = z.object({ tenantId: uuidSchema }).strict();
+export type ActivateWorkingTimeEnforcementInput = z.infer<
+  typeof activateWorkingTimeEnforcementSchema
+>;
+
 export const decideAttendanceSchema = z
   .object({
     id: uuidSchema,

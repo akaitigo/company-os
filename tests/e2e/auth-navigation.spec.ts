@@ -80,6 +80,9 @@ test('authenticated administrator creates an audited organization command', asyn
   await attendance.getByRole('button', { name: '勤怠を記録' }).click();
   await expect(attendance.getByRole('status')).toContainText('勤怠を記録しました');
   await expect(attendance.getByRole('table')).toContainText('9時間0分');
+  await attendance.getByText('計算根拠').first().click();
+  await expect(attendance.getByRole('table')).toContainText('DEMO_STANDARD v1');
+  await expect(attendance.getByRole('table')).toContainText('日次法定時間外');
   await attendance.getByRole('button', { name: '訂正する' }).first().click();
   await attendance.getByLabel('勤務日').fill('2026-08-09');
   await attendance.getByLabel('開始時刻').fill('08:45');
@@ -272,6 +275,13 @@ test('authenticated administrator creates an audited organization command', asyn
 
 test('HR closes and reopens an approved attendance month', async ({ page }) => {
   await login(page, 'hr-e2e');
+  const workRules = page.getByRole('region', { name: '勤務ルール・カレンダー' });
+  await expect(workRules).toContainText('DEMO_STANDARD v1');
+  await workRules.getByLabel('対象日').fill('2027-01-10');
+  await workRules.getByLabel('区分').selectOption('statutory_holiday');
+  await workRules.getByLabel('理由').fill('E2E法定休日設定');
+  await workRules.getByRole('button', { name: 'カレンダーへ追加' }).click();
+  await expect(workRules.getByRole('status')).toContainText('勤務カレンダーへ履歴を追加しました');
   const attendance = page.getByRole('region', { name: '勤怠' });
   await expect(attendance.getByRole('heading', { name: '月次締め' })).toBeVisible();
   await attendance.getByLabel('締め対象月').fill('2027-01');
@@ -305,6 +315,7 @@ test('employee cannot review or close attendance', async ({ page }) => {
   const attendance = page.getByRole('region', { name: '勤怠' });
   await expect(attendance.getByRole('button', { name: '承認', exact: true })).toHaveCount(0);
   await expect(attendance.getByRole('heading', { name: '月次締め' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '勤務ルール・カレンダー' })).toHaveCount(0);
   const deniedStatus = await page.evaluate(async () => {
     const response = await fetch('/api/commands/attendance-decisions', {
       method: 'POST',

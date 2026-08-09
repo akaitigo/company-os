@@ -114,5 +114,19 @@ describe('authorization', () => {
         resourceTenantId: tenantA,
       }),
     ).toBe('allow');
+    expect(
+      authorize({
+        principal: manager,
+        action: 'workforce.work-rule.manage',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('deny');
+    expect(
+      authorize({
+        principal: hr,
+        action: 'workforce.work-rule.manage',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
   });
 });

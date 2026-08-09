@@ -15,6 +15,21 @@ interface AttendanceRow {
   decision: 'approved' | 'rejected' | null;
   decisionReason: string | null;
   periodClosed: boolean;
+  calculationInputHash: string | null;
+  classification: {
+    schemaVersion: 1;
+    scheduledMinutes: number;
+    outsideScheduleMinutes: number;
+    statutoryOvertimeMinutes: number;
+    nightMinutes: number;
+    statutoryHolidayMinutes: number;
+    rule: {
+      code: string;
+      version: number;
+      requirementId: string;
+      expertReviewStatus: 'approved';
+    };
+  } | null;
 }
 interface PeriodRow {
   id: string;
@@ -351,7 +366,37 @@ export function AttendanceForm({
               <td>{new Date(row.startedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</td>
               <td>{new Date(row.endedAt).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</td>
               <td>{minutes(row.breakMinutes)}</td>
-              <td>{minutes(row.workedMinutes)}</td>
+              <td>
+                {minutes(row.workedMinutes)}
+                {row.classification === null ? (
+                  <small>（旧記録・未分類）</small>
+                ) : (
+                  <details>
+                    <summary>計算根拠</summary>
+                    <dl>
+                      <dt>勤務ルール</dt>
+                      <dd>
+                        {row.classification.rule.code} v{row.classification.rule.version}
+                        （専門家確認: 承認済み）
+                      </dd>
+                      <dt>所定内</dt>
+                      <dd>{minutes(row.classification.scheduledMinutes)}</dd>
+                      <dt>所定外</dt>
+                      <dd>{minutes(row.classification.outsideScheduleMinutes)}</dd>
+                      <dt>日次法定時間外</dt>
+                      <dd>{minutes(row.classification.statutoryOvertimeMinutes)}</dd>
+                      <dt>深夜</dt>
+                      <dd>{minutes(row.classification.nightMinutes)}</dd>
+                      <dt>法定休日</dt>
+                      <dd>{minutes(row.classification.statutoryHolidayMinutes)}</dd>
+                      <dt>根拠要件</dt>
+                      <dd>{row.classification.rule.requirementId}</dd>
+                    </dl>
+                    <small>計算識別子: {row.calculationInputHash?.slice(0, 12)}</small>
+                    <p>月次・年次の時間外上限や給与額は、この内訳では判定していません。</p>
+                  </details>
+                )}
+              </td>
               <td>
                 {row.supersededById !== null
                   ? '訂正済み'

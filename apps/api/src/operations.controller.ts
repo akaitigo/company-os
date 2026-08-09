@@ -12,15 +12,20 @@ import {
 } from '@nestjs/common';
 import {
   allocateCostSchema,
+  activateWorkingTimeEnforcementSchema,
+  assignWorkRuleSchema,
   applyReceiptSchema,
   createRequisitionSchema,
+  createWorkRuleSchema,
   decideAttendanceSchema,
   listAttendancePeriodsQuerySchema,
   listAttendanceQuerySchema,
+  listWorkRulesQuerySchema,
   postJournalSchema,
   recordAttendanceSchema,
   requestLeaveSchema,
   requestContextSchema,
+  setEmploymentCalendarDaySchema,
   transitionAttendancePeriodSchema,
 } from '@company-os/contracts';
 import { DomainError } from '@company-os/kernel';
@@ -72,6 +77,43 @@ export class OperationsController {
       listAttendancePeriodsQuerySchema.safeParse(query),
       request,
       (input, context) => this.service.listAttendancePeriods(input, context),
+    );
+  }
+
+  @Post('/workforce/work-rules')
+  createWorkRule(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(createWorkRuleSchema.safeParse(body), request, (input, context) =>
+      this.service.createWorkRule(input, context),
+    );
+  }
+
+  @Get('/workforce/work-rules')
+  listWorkRules(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(listWorkRulesQuerySchema.safeParse(query), request, (input, context) =>
+      this.service.listWorkRules(input, context),
+    );
+  }
+
+  @Post('/workforce/work-rule-assignments')
+  assignWorkRule(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(assignWorkRuleSchema.safeParse(body), request, (input, context) =>
+      this.service.assignWorkRule(input, context),
+    );
+  }
+
+  @Post('/workforce/employment-calendar-days')
+  setEmploymentCalendarDay(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(setEmploymentCalendarDaySchema.safeParse(body), request, (input, context) =>
+      this.service.setEmploymentCalendarDay(input, context),
+    );
+  }
+
+  @Post('/workforce/working-time-enforcement')
+  activateWorkingTimeEnforcement(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(
+      activateWorkingTimeEnforcementSchema.safeParse(body),
+      request,
+      (input, context) => this.service.activateWorkingTimeEnforcement(input, context),
     );
   }
 

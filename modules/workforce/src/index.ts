@@ -87,8 +87,17 @@ export class AttendanceEntry {
   constructor(readonly input: AttendanceInput) {
     const started = Date.parse(input.startedAt);
     const ended = Date.parse(input.endedAt);
-    if (!Number.isFinite(started) || !Number.isFinite(ended) || ended <= started)
-      throw new DomainError('INVALID_ATTENDANCE_BOUNDS', 'Attendance end must follow start');
+    if (
+      !Number.isFinite(started) ||
+      !Number.isFinite(ended) ||
+      ended <= started ||
+      started % 60_000 !== 0 ||
+      ended % 60_000 !== 0
+    )
+      throw new DomainError(
+        'INVALID_ATTENDANCE_BOUNDS',
+        'Attendance end must follow start and boundaries must use whole minutes',
+      );
     const elapsedMs = ended - started;
     if (elapsedMs % 60_000 !== 0 || elapsedMs > 48 * 60 * 60_000)
       throw new DomainError(
@@ -112,6 +121,8 @@ export class AttendanceEntry {
         item.end <= item.start ||
         item.start < started ||
         item.end > ended ||
+        item.start % 60_000 !== 0 ||
+        item.end % 60_000 !== 0 ||
         (item.end - item.start) % 60_000 !== 0
       )
         throw new DomainError(
@@ -136,6 +147,145 @@ export class AttendanceEntry {
     this.breakMinutes = breakMs / 60_000;
     this.workedMinutes = this.elapsedMinutes - this.breakMinutes;
   }
+}
+
+export interface DailyWorkRule {
+  readonly ruleVersionId: string;
+  readonly ruleCode: string;
+  readonly ruleVersion: number;
+  readonly timeZone: 'Asia/Tokyo';
+  readonly scheduledStartMinute: number;
+  readonly scheduledEndMinute: number;
+  readonly statutoryDailyMinutes: number;
+  readonly nightStartMinute: number;
+  readonly nightEndMinute: number;
+  readonly requirementId: string;
+  readonly expertReviewStatus: 'approved';
+}
+
+export interface DailyWorkClassification {
+  readonly schemaVersion: 1;
+  readonly workedMinutes: number;
+  readonly scheduledMinutes: number;
+  readonly outsideScheduleMinutes: number;
+  readonly statutoryOvertimeMinutes: number;
+  readonly nightMinutes: number;
+  readonly statutoryHolidayMinutes: number;
+  readonly rule: Readonly<{
+    id: string;
+    code: string;
+    version: number;
+    requirementId: string;
+    expertReviewStatus: 'approved';
+  }>;
+}
+
+function minuteOfDay(date: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const value = (type: string): number =>
+    Number(parts.find((part) => part.type === type)?.value ?? '0');
+  return value('hour') * 60 + value('minute');
+}
+
+function localDate(date: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+function nextDate(value: string): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function withinWindow(minute: number, start: number, end: number): boolean {
+  return start < end ? minute >= start && minute < end : minute >= start || minute < end;
+}
+
+export function classifyDailyWork(
+  attendance: AttendanceEntry,
+  rule: DailyWorkRule,
+  statutoryHolidayDates: ReadonlySet<string>,
+  nonWorkingDates: ReadonlySet<string> = new Set(),
+): DailyWorkClassification {
+  for (const value of [
+    rule.scheduledStartMinute,
+    rule.scheduledEndMinute,
+    rule.nightStartMinute,
+    rule.nightEndMinute,
+  ]) {
+    if (!Number.isInteger(value) || value < 0 || value > 1_439)
+      throw new DomainError('INVALID_WORK_RULE_TIME', 'Work rule times must be minute-of-day');
+  }
+  if (
+    !Number.isInteger(rule.statutoryDailyMinutes) ||
+    rule.statutoryDailyMinutes < 1 ||
+    rule.statutoryDailyMinutes > 1_440 ||
+    rule.scheduledStartMinute === rule.scheduledEndMinute ||
+    rule.nightStartMinute === rule.nightEndMinute
+  )
+    throw new DomainError('INVALID_WORK_RULE', 'Work rule boundaries are invalid');
+
+  const started = Date.parse(attendance.input.startedAt);
+  const ended = Date.parse(attendance.input.endedAt);
+  const breaks = attendance.input.breaks.map((item) => ({
+    start: Date.parse(item.startedAt),
+    end: Date.parse(item.endedAt),
+  }));
+  const followingDate = nextDate(attendance.input.workDate);
+  let workedMinutes = 0;
+  let scheduledMinutes = 0;
+  let statutoryOvertimeMinutes = 0;
+  let nightMinutes = 0;
+  let statutoryHolidayMinutes = 0;
+
+  for (let cursor = started; cursor < ended; cursor += 60_000) {
+    if (breaks.some((item) => cursor >= item.start && cursor < item.end)) continue;
+    workedMinutes += 1;
+    const instant = new Date(cursor);
+    const date = localDate(instant, rule.timeZone);
+    const minute = minuteOfDay(instant, rule.timeZone);
+    const scheduled =
+      !nonWorkingDates.has(date) &&
+      (rule.scheduledStartMinute < rule.scheduledEndMinute
+        ? date === attendance.input.workDate &&
+          minute >= rule.scheduledStartMinute &&
+          minute < rule.scheduledEndMinute
+        : (date === attendance.input.workDate && minute >= rule.scheduledStartMinute) ||
+          (date === followingDate && minute < rule.scheduledEndMinute));
+    if (scheduled) scheduledMinutes += 1;
+    if (workedMinutes > rule.statutoryDailyMinutes) statutoryOvertimeMinutes += 1;
+    if (withinWindow(minute, rule.nightStartMinute, rule.nightEndMinute)) nightMinutes += 1;
+    if (statutoryHolidayDates.has(date)) statutoryHolidayMinutes += 1;
+  }
+
+  if (workedMinutes !== attendance.workedMinutes)
+    throw new DomainError('WORK_CLASSIFICATION_MISMATCH', 'Classified work must match attendance');
+  return {
+    schemaVersion: 1,
+    workedMinutes,
+    scheduledMinutes,
+    outsideScheduleMinutes: workedMinutes - scheduledMinutes,
+    statutoryOvertimeMinutes,
+    nightMinutes,
+    statutoryHolidayMinutes,
+    rule: {
+      id: rule.ruleVersionId,
+      code: rule.ruleCode,
+      version: rule.ruleVersion,
+      requirementId: rule.requirementId,
+      expertReviewStatus: rule.expertReviewStatus,
+    },
+  };
 }
 export type AttendanceDecision = 'approved' | 'rejected';
 export class AttendanceReview {

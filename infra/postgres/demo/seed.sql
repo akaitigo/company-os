@@ -13,6 +13,27 @@ VALUES
   ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000003',
    '10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','2026-04-01',2400,'active')
 ON CONFLICT DO NOTHING;
+INSERT INTO workforce.work_rule_versions
+  (tenant_id,id,rule_code,version,effective_from,time_zone,scheduled_start_minute,
+   scheduled_end_minute,statutory_daily_minutes,night_start_minute,night_end_minute,
+   statutory_holiday_weekdays,requirement_id,control_id,expert_review_status,definition_hash,created_by)
+VALUES
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000014',
+   'DEMO_STANDARD',1,'2026-04-01','Asia/Tokyo',540,1080,480,1320,300,'{0}',
+   'JP-LABOR-003','CTL-LABOR-OVERTIME-001','approved',
+   '08deff38c5ac14f96854154170168e53d622cb6e4855b51c45e5824d87370c63',
+   '10000000-0000-4000-8000-000000000002')
+ON CONFLICT DO NOTHING;
+INSERT INTO workforce.employment_work_rule_assignments
+  (tenant_id,id,employment_id,work_rule_version_id,effective_from,assigned_by)
+VALUES
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000015',
+   '10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000014',
+   '2026-04-01','10000000-0000-4000-8000-000000000002')
+ON CONFLICT DO NOTHING;
+INSERT INTO workforce.working_time_enforcement (tenant_id,activated_by)
+VALUES ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000002')
+ON CONFLICT DO NOTHING;
 INSERT INTO party.parties (tenant_id,id,party_type,display_name)
 VALUES ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000012',
         'person','Access Boundary Test User')
@@ -23,6 +44,13 @@ VALUES
   ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000013',
    '10000000-0000-4000-8000-000000000012','10000000-0000-4000-8000-000000000001',
    '2026-04-01',2400,'active')
+ON CONFLICT DO NOTHING;
+INSERT INTO workforce.employment_work_rule_assignments
+  (tenant_id,id,employment_id,work_rule_version_id,effective_from,assigned_by)
+VALUES
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000016',
+   '10000000-0000-4000-8000-000000000013','10000000-0000-4000-8000-000000000014',
+   '2026-04-01','10000000-0000-4000-8000-000000000002')
 ON CONFLICT DO NOTHING;
 INSERT INTO workforce.leave_ledger
   (tenant_id,id,employment_id,occurred_at,entry_type,minutes,reference_id)
