@@ -75,10 +75,10 @@ docker run --detach --name "$postgres_container" --publish "127.0.0.1:$db_port:5
   postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
   -c ssl=on -c ssl_cert_file=/cert/server.crt -c ssl_key_file=/cert/server.key >/dev/null
 for _ in $(seq 1 30); do
-  docker exec "$postgres_container" pg_isready -U bootstrap -d preflight >/dev/null 2>&1 && break
+  pg_isready -h 127.0.0.1 -p "$db_port" -U bootstrap -d preflight >/dev/null 2>&1 && break
   sleep 1
 done
-if ! docker exec "$postgres_container" pg_isready -U bootstrap -d preflight >/dev/null 2>&1; then
+if ! pg_isready -h 127.0.0.1 -p "$db_port" -U bootstrap -d preflight >/dev/null 2>&1; then
   docker logs "$postgres_container" >&2
   echo 'TLS PostgreSQL fixture did not become ready.' >&2
   exit 1
