@@ -5,19 +5,27 @@ import type {
   AllocateCostInput,
   ApplyReceiptInput,
   CreateRequisitionInput,
+  DecideAttendanceInput,
+  ListAttendancePeriodsQuery,
   ListAttendanceQuery,
   PostJournalInput,
   RecordAttendanceInput,
   RequestLeaveInput,
   RequestContext,
+  TransitionAttendancePeriodInput,
 } from '@company-os/contracts';
 import { entityId, tenantId } from '@company-os/kernel';
-import { AttendanceEntry } from '@company-os/workforce';
+import {
+  AttendanceEntry,
+  AttendancePeriodTransition,
+  AttendanceReview,
+} from '@company-os/workforce';
 import { Pool, type PoolClient } from 'pg';
 import { AccessDeniedError } from './organization.service.js';
 
 type CommandResult = Readonly<{ id: string; version: number }>;
 export class OperationConflictError extends Error {}
+export class AttendanceConflictError extends Error {}
 
 @Injectable()
 export class OperationsService {
@@ -40,63 +48,67 @@ export class OperationsService {
       timeZone: input.timeZone,
       breaks: input.breaks,
     });
-    return this.transaction(context, async (client) => {
-      await this.assertEmploymentAccess(client, context, input.employmentId);
-      if (input.correctedEntryId !== undefined) {
-        const correction = await client.query(
-          `SELECT 1 FROM workforce.attendance_entries original
+    try {
+      return await this.transaction(context, async (client) => {
+        await this.assertEmploymentAccess(client, context, input.employmentId);
+        if (input.correctedEntryId !== undefined) {
+          const correction = await client.query(
+            `SELECT 1 FROM workforce.attendance_entries original
             WHERE original.tenant_id=$1 AND original.id=$2 AND original.employment_id=$3
               AND NOT EXISTS (
                 SELECT 1 FROM workforce.attendance_entries replacement
                  WHERE replacement.tenant_id=original.tenant_id
                    AND replacement.corrected_entry_id=original.id
               ) FOR UPDATE`,
-          [input.tenantId, input.correctedEntryId, input.employmentId],
-        );
-        if (correction.rowCount !== 1)
-          throw new OperationConflictError('Attendance correction target is unavailable');
-      }
-      await client.query(
-        `INSERT INTO workforce.attendance_entries
+            [input.tenantId, input.correctedEntryId, input.employmentId],
+          );
+          if (correction.rowCount !== 1)
+            throw new OperationConflictError('Attendance correction target is unavailable');
+        }
+        await client.query(
+          `INSERT INTO workforce.attendance_entries
           (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,
            recorded_by,corrected_entry_id)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'submitted',$9,$10)`,
-        [
-          input.tenantId,
-          input.id,
-          input.employmentId,
-          input.workDate,
-          input.startedAt,
-          input.endedAt,
-          entry.breakMinutes,
-          input.source,
-          context.actorId,
-          input.correctedEntryId ?? null,
-        ],
-      );
-      for (const item of input.breaks) {
-        await client.query(
-          `INSERT INTO workforce.attendance_breaks
+          [
+            input.tenantId,
+            input.id,
+            input.employmentId,
+            input.workDate,
+            input.startedAt,
+            input.endedAt,
+            entry.breakMinutes,
+            input.source,
+            context.actorId,
+            input.correctedEntryId ?? null,
+          ],
+        );
+        for (const item of input.breaks) {
+          await client.query(
+            `INSERT INTO workforce.attendance_breaks
             (tenant_id,attendance_entry_id,id,started_at,ended_at)
            VALUES ($1,$2,$3,$4,$5)`,
-          [input.tenantId, input.id, item.id, item.startedAt, item.endedAt],
+            [input.tenantId, input.id, item.id, item.startedAt, item.endedAt],
+          );
+        }
+        await this.recordEvidence(
+          client,
+          context,
+          'workforce.attendance.record',
+          'attendance',
+          input.id,
+          {
+            workDate: input.workDate,
+            workedMinutes: entry.workedMinutes,
+            breakCount: input.breaks.length,
+            correctedEntryId: input.correctedEntryId,
+          },
         );
-      }
-      await this.recordEvidence(
-        client,
-        context,
-        'workforce.attendance.record',
-        'attendance',
-        input.id,
-        {
-          workDate: input.workDate,
-          workedMinutes: entry.workedMinutes,
-          breakCount: input.breaks.length,
-          correctedEntryId: input.correctedEntryId,
-        },
-      );
-      return { id: input.id, version: 1 };
-    });
+        return { id: input.id, version: 1 };
+      });
+    } catch (error) {
+      this.rethrowAttendanceConflict(error);
+    }
   }
 
   async listAttendance(
@@ -107,12 +119,17 @@ export class OperationsService {
     return this.transaction(context, async (client) => {
       await this.assertEmploymentAccess(client, context, query.employmentId);
       const result = await client.query(
-        `SELECT entry.id,entry.work_date AS "workDate",entry.started_at AS "startedAt",
+        `SELECT entry.id,to_char(entry.work_date,'YYYY-MM-DD') AS "workDate",
+                entry.started_at AS "startedAt",
                 entry.ended_at AS "endedAt",entry.break_minutes AS "breakMinutes",
                 (extract(epoch FROM (entry.ended_at-entry.started_at))/60-entry.break_minutes)::integer
                   AS "workedMinutes",
                 entry.source,entry.status,entry.corrected_entry_id AS "correctedEntryId",
                 replacement.id AS "supersededById",
+                decision.decision,decision.reason AS "decisionReason",
+                decision.decided_at AS "decidedAt",decision.decided_by AS "decidedBy",
+                workforce.attendance_period_is_closed(
+                  entry.tenant_id,entry.employment_id,entry.work_date) AS "periodClosed",
                 coalesce(jsonb_agg(jsonb_build_object(
                   'id',br.id,'startedAt',br.started_at,'endedAt',br.ended_at)
                   ORDER BY br.started_at) FILTER (WHERE br.id IS NOT NULL),'[]'::jsonb) AS breaks
@@ -121,9 +138,121 @@ export class OperationsService {
              ON br.tenant_id=entry.tenant_id AND br.attendance_entry_id=entry.id
            LEFT JOIN workforce.attendance_entries replacement
              ON replacement.tenant_id=entry.tenant_id AND replacement.corrected_entry_id=entry.id
+           LEFT JOIN workforce.attendance_decisions decision
+             ON decision.tenant_id=entry.tenant_id AND decision.attendance_entry_id=entry.id
           WHERE entry.tenant_id=$1 AND entry.employment_id=$2
-          GROUP BY entry.tenant_id,entry.id,replacement.id
+          GROUP BY entry.tenant_id,entry.id,replacement.id,decision.tenant_id,decision.id
           ORDER BY entry.work_date DESC,entry.started_at DESC,entry.id DESC LIMIT $3`,
+        [context.tenantId, query.employmentId, query.limit],
+      );
+      return result.rows as readonly Record<string, unknown>[];
+    });
+  }
+
+  async decideAttendance(
+    input: DecideAttendanceInput,
+    context: RequestContext,
+  ): Promise<CommandResult> {
+    this.assertAuthorized('workforce.attendance.review', input.tenantId, context);
+    const review = new AttendanceReview(input.decision, input.reason);
+    try {
+      return await this.transaction(context, async (client) => {
+        await this.assertEmploymentAccess(client, context, input.employmentId, ['manager', 'hr']);
+        await client.query(
+          `INSERT INTO workforce.attendance_decisions
+            (tenant_id,id,attendance_entry_id,employment_id,decision,reason,decided_by)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            input.tenantId,
+            input.id,
+            input.attendanceEntryId,
+            input.employmentId,
+            review.decision,
+            review.reason,
+            context.actorId,
+          ],
+        );
+        await this.recordEvidence(
+          client,
+          context,
+          'workforce.attendance.review',
+          'attendance_decision',
+          input.id,
+          {
+            attendanceEntryId: input.attendanceEntryId,
+            decision: review.decision,
+            reason: review.reason,
+          },
+          `attendance.${review.decision}.v1`,
+        );
+        return { id: input.id, version: 1 };
+      });
+    } catch (error) {
+      this.rethrowAttendanceConflict(error);
+    }
+  }
+
+  async transitionAttendancePeriod(
+    input: TransitionAttendancePeriodInput,
+    context: RequestContext,
+  ): Promise<CommandResult> {
+    this.assertAuthorized('workforce.attendance.period.manage', input.tenantId, context);
+    const transition = new AttendancePeriodTransition(
+      input.periodMonth,
+      input.action,
+      input.reason,
+    );
+    try {
+      return await this.transaction(context, async (client) => {
+        await this.assertEmploymentAccess(client, context, input.employmentId, ['hr']);
+        await client.query(
+          `INSERT INTO workforce.attendance_period_events
+            (tenant_id,id,employment_id,period_month,sequence,action,reason,actor_id)
+           VALUES ($1,$2,$3,$4,1,$5,$6,$7)`,
+          [
+            input.tenantId,
+            input.id,
+            input.employmentId,
+            transition.periodMonth,
+            transition.action,
+            transition.reason,
+            context.actorId,
+          ],
+        );
+        await this.recordEvidence(
+          client,
+          context,
+          'workforce.attendance.period.manage',
+          'attendance_period_event',
+          input.id,
+          {
+            employmentId: input.employmentId,
+            periodMonth: transition.periodMonth,
+            action: transition.action,
+            reason: transition.reason,
+          },
+          `attendance_period.${transition.action === 'close' ? 'closed' : 'reopened'}.v1`,
+        );
+        return { id: input.id, version: 1 };
+      });
+    } catch (error) {
+      this.rethrowAttendanceConflict(error);
+    }
+  }
+
+  async listAttendancePeriods(
+    query: ListAttendancePeriodsQuery,
+    context: RequestContext,
+  ): Promise<readonly Record<string, unknown>[]> {
+    this.assertAuthorized('workforce.attendance.period.manage', context.tenantId, context);
+    return this.transaction(context, async (client) => {
+      await this.assertEmploymentAccess(client, context, query.employmentId, ['hr']);
+      const result = await client.query(
+        `SELECT id,to_char(period_month,'YYYY-MM-DD') AS "periodMonth",sequence,action,reason,
+                occurred_at AS "occurredAt",actor_id AS "actorId"
+           FROM workforce.attendance_period_events
+          WHERE tenant_id=$1 AND employment_id=$2
+          ORDER BY period_month DESC,sequence DESC LIMIT $3`,
         [context.tenantId, query.employmentId, query.limit],
       );
       return result.rows as readonly Record<string, unknown>[];
@@ -133,6 +262,7 @@ export class OperationsService {
   async requestLeave(input: RequestLeaveInput, context: RequestContext): Promise<CommandResult> {
     this.assertAuthorized('workforce.leave.request', input.tenantId, context);
     return this.transaction(context, async (client) => {
+      await this.assertEmploymentAccess(client, context, input.employmentId);
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
         `${input.tenantId}:${input.employmentId}:leave`,
       ]);
@@ -391,13 +521,22 @@ export class OperationsService {
     client: PoolClient,
     context: RequestContext,
     employmentId: string,
+    allowedTypes: readonly ('employee' | 'manager' | 'hr')[] = ['employee', 'manager', 'hr'],
   ): Promise<void> {
     const result = await client.query(
       `SELECT 1 FROM workforce.employment_access
-        WHERE tenant_id=$1 AND actor_id=$2 AND employment_id=$3 AND revoked_at IS NULL`,
-      [context.tenantId, context.actorId, employmentId],
+        WHERE tenant_id=$1 AND actor_id=$2 AND employment_id=$3
+          AND access_type=ANY($4::varchar[]) AND revoked_at IS NULL`,
+      [context.tenantId, context.actorId, employmentId, allowedTypes],
     );
     if (result.rowCount !== 1) throw new AccessDeniedError('Employment access denied');
+  }
+
+  private rethrowAttendanceConflict(error: unknown): never {
+    const databaseError = error as { code?: string; message?: string };
+    if (databaseError.code === '23505' || databaseError.message?.startsWith('attendance ') === true)
+      throw new AttendanceConflictError(databaseError.message ?? 'Attendance state conflict');
+    throw error;
   }
 
   private async transaction<T>(
@@ -427,6 +566,7 @@ export class OperationsService {
     resourceType: string,
     resourceId: string,
     metadata: Readonly<Record<string, unknown>>,
+    eventType?: string,
   ): Promise<void> {
     const occurredAt = new Date().toISOString();
     await client.query(
@@ -453,7 +593,7 @@ export class OperationsService {
         context.tenantId,
         randomUUID(),
         `${resourceType}:${resourceId}:1:created`,
-        `${resourceType}.created.v1`,
+        eventType ?? `${resourceType}.created.v1`,
         resourceId,
         1,
         JSON.stringify(metadata),

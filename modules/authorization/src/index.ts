@@ -22,9 +22,17 @@ const roleActions: Readonly<Record<string, readonly string[]>> = {
   'workforce-manager': [
     'workforce.attendance.record',
     'workforce.attendance.read',
+    'workforce.attendance.review',
     'workforce.leave.request',
   ],
   'workforce-employee': ['workforce.attendance.record', 'workforce.attendance.read'],
+  'workforce-hr': [
+    'workforce.attendance.record',
+    'workforce.attendance.read',
+    'workforce.attendance.review',
+    'workforce.attendance.period.manage',
+    'workforce.leave.request',
+  ],
   'procurement-buyer': ['procurement.requisition.create'],
   'finance-accountant': ['finance.journal.post', 'finance.receipt.apply', 'finance.cost.allocate'],
 };

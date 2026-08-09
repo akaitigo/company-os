@@ -48,6 +48,98 @@ ROLLBACK;
 
 BEGIN;
 INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
+VALUES ('99999999-9999-4999-8999-999999999999','41414141-4141-4141-8141-414141414141','REVIEW','Review','2026-04-01');
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('99999999-9999-4999-8999-999999999999','42424242-4242-4242-8242-424242424242','person','Review Worker');
+INSERT INTO workforce.employments
+  (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+VALUES ('99999999-9999-4999-8999-999999999999','43434343-4343-4343-8343-434343434343',
+  '42424242-4242-4242-8242-424242424242','41414141-4141-4141-8141-414141414141','2026-04-01',2400,'active');
+SET LOCAL ROLE company_os_app;
+SELECT set_config('app.tenant_id','99999999-9999-4999-8999-999999999999',true);
+INSERT INTO workforce.attendance_entries
+  (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+VALUES ('99999999-9999-4999-8999-999999999999','44444444-4444-4444-8444-444444444444',
+  '43434343-4343-4343-8343-434343434343','2026-09-01','2026-08-31T23:00:00Z','2026-09-01T08:00:00Z',0,
+  'manual','submitted','45454545-4545-4545-8545-454545454545');
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO workforce.attendance_period_events
+      (tenant_id,id,employment_id,period_month,sequence,action,reason,actor_id)
+    VALUES ('99999999-9999-4999-8999-999999999999','46464646-4646-4646-8646-464646464646',
+      '43434343-4343-4343-8343-434343434343','2026-09-01',1,'close','cutoff',
+      '47474747-4747-4747-8747-474747474747');
+    RAISE EXCEPTION 'unresolved attendance period unexpectedly closed';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM='unresolved attendance period unexpectedly closed' THEN RAISE; END IF;
+  END;
+END;
+$$;
+INSERT INTO workforce.attendance_decisions
+  (tenant_id,id,attendance_entry_id,employment_id,decision,reason,decided_by)
+VALUES ('99999999-9999-4999-8999-999999999999','48484848-4848-4848-8848-484848484848',
+  '44444444-4444-4444-8444-444444444444','43434343-4343-4343-8343-434343434343',
+  'approved','verified','47474747-4747-4747-8747-474747474747');
+INSERT INTO workforce.attendance_period_events
+  (tenant_id,id,employment_id,period_month,sequence,action,reason,actor_id)
+VALUES ('99999999-9999-4999-8999-999999999999','49494949-4949-4949-8949-494949494949',
+  '43434343-4343-4343-8343-434343434343','2026-09-01',1,'close','cutoff',
+  '47474747-4747-4747-8747-474747474747');
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO workforce.attendance_entries
+      (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+    VALUES ('99999999-9999-4999-8999-999999999999','50505050-5050-4050-8050-505050505050',
+      '43434343-4343-4343-8343-434343434343','2026-09-02','2026-09-01T23:00:00Z','2026-09-02T08:00:00Z',0,
+      'manual','submitted','45454545-4545-4545-8545-454545454545');
+    RAISE EXCEPTION 'closed attendance period accepted a record';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM='closed attendance period accepted a record' THEN RAISE; END IF;
+  END;
+  BEGIN
+    INSERT INTO workforce.attendance_decisions
+      (tenant_id,id,attendance_entry_id,employment_id,decision,reason,decided_by)
+    VALUES ('99999999-9999-4999-8999-999999999999','51515151-5151-4151-8151-515151515151',
+      '44444444-4444-4444-8444-444444444444','43434343-4343-4343-8343-434343434343',
+      'rejected','second decision','47474747-4747-4747-8747-474747474747');
+    RAISE EXCEPTION 'duplicate attendance decision unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM='duplicate attendance decision unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+  BEGIN
+    UPDATE workforce.attendance_decisions SET reason='mutated'
+     WHERE id='48484848-4848-4848-8848-484848484848';
+    RAISE EXCEPTION 'attendance decision mutation unexpectedly succeeded';
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM='attendance decision mutation unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+END;
+$$;
+INSERT INTO workforce.attendance_period_events
+  (tenant_id,id,employment_id,period_month,sequence,action,reason,actor_id)
+VALUES ('99999999-9999-4999-8999-999999999999','52525252-5252-4252-8252-525252525252',
+  '43434343-4343-4343-8343-434343434343','2026-09-01',1,'reopen','correction required',
+  '47474747-4747-4747-8747-474747474747');
+INSERT INTO workforce.attendance_entries
+  (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+VALUES ('99999999-9999-4999-8999-999999999999','50505050-5050-4050-8050-505050505050',
+  '43434343-4343-4343-8343-434343434343','2026-09-02','2026-09-01T23:00:00Z','2026-09-02T08:00:00Z',0,
+  'manual','submitted','45454545-4545-4545-8545-454545454545');
+DO $$
+BEGIN
+  PERFORM set_config('app.tenant_id','77777777-7777-4777-8777-777777777777',true);
+  IF (SELECT count(*) FROM workforce.attendance_decisions)>0
+    OR (SELECT count(*) FROM workforce.attendance_period_events)>0 THEN
+    RAISE EXCEPTION 'cross-tenant attendance review history leaked';
+  END IF;
+END;
+$$;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
 VALUES ('99999999-9999-4999-8999-999999999999','30303030-3030-4030-8030-303030303030','TIME','Time','2026-04-01');
 INSERT INTO party.parties (tenant_id,id,party_type,display_name)
 VALUES ('99999999-9999-4999-8999-999999999999','31313131-3131-4131-8131-313131313131','person','Break Worker');

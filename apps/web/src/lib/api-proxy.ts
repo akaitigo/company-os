@@ -1,25 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { decodeJwt } from 'jose';
-import { cookies } from 'next/headers';
 import { NextResponse, type NextRequest } from 'next/server';
-import { unseal } from './auth';
-
-interface Session {
-  accessToken: string;
-}
-
-async function accessToken(): Promise<string | undefined> {
-  const encrypted = (await cookies()).get('company_os_session')?.value;
-  if (encrypted === undefined) return undefined;
-  try {
-    return (await unseal<Session>(encrypted)).accessToken;
-  } catch {
-    return undefined;
-  }
-}
+import { sessionAccessToken } from './session';
 
 export async function proxyApi(request: NextRequest, apiPath: string): Promise<NextResponse> {
-  const token = await accessToken();
+  const token = await sessionAccessToken();
   if (token === undefined) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const api = new URL(apiPath, process.env['API_INTERNAL_URL'] ?? 'http://127.0.0.1:3001');
   if (request.method === 'GET') api.search = request.nextUrl.search;

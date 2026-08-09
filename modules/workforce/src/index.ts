@@ -137,6 +137,42 @@ export class AttendanceEntry {
     this.workedMinutes = this.elapsedMinutes - this.breakMinutes;
   }
 }
+export type AttendanceDecision = 'approved' | 'rejected';
+export class AttendanceReview {
+  readonly reason: string;
+  constructor(
+    readonly decision: AttendanceDecision,
+    reason: string,
+  ) {
+    this.reason = reason.trim();
+    if (this.reason.length === 0 || this.reason.length > 500)
+      throw new DomainError(
+        'INVALID_ATTENDANCE_DECISION_REASON',
+        'Attendance decision reason must contain 1 to 500 characters',
+      );
+  }
+}
+export type AttendancePeriodAction = 'close' | 'reopen';
+export class AttendancePeriodTransition {
+  readonly reason: string;
+  constructor(
+    readonly periodMonth: string,
+    readonly action: AttendancePeriodAction,
+    reason: string,
+  ) {
+    this.reason = reason.trim();
+    if (!/^\d{4}-(0[1-9]|1[0-2])-01$/.test(periodMonth))
+      throw new DomainError(
+        'INVALID_ATTENDANCE_PERIOD_MONTH',
+        'Attendance period month must be the first day of a calendar month',
+      );
+    if (this.reason.length === 0 || this.reason.length > 500)
+      throw new DomainError(
+        'INVALID_ATTENDANCE_PERIOD_REASON',
+        'Attendance period reason must contain 1 to 500 characters',
+      );
+  }
+}
 export type LeaveRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export class LeaveRequest {
   private status: LeaveRequestStatus = 'pending';

@@ -4,10 +4,12 @@ import {
   applyReceiptSchema,
   createRequisitionSchema,
   createOrganizationUnitSchema,
+  decideAttendanceSchema,
   postJournalSchema,
   recordAttendanceSchema,
   requestLeaveSchema,
   requestContextSchema,
+  transitionAttendancePeriodSchema,
 } from '../../packages/contracts/src/index.js';
 
 describe('boundary contracts', () => {
@@ -115,6 +117,38 @@ describe('boundary contracts', () => {
       recordAttendanceSchema.parse({
         ...input,
         breaks: Array.from({ length: 11 }, () => input.breaks[0]),
+      }),
+    ).toThrow();
+  });
+
+  it('bounds attendance decisions and calendar-month transitions', () => {
+    const base = {
+      id: '22222222-2222-4222-8222-222222222222',
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      employmentId: '33333333-3333-4333-8333-333333333333',
+    };
+    expect(
+      decideAttendanceSchema.parse({
+        ...base,
+        attendanceEntryId: '44444444-4444-4444-8444-444444444444',
+        decision: 'approved',
+        reason: 'verified',
+      }).reason,
+    ).toBe('verified');
+    expect(() =>
+      decideAttendanceSchema.parse({
+        ...base,
+        attendanceEntryId: '44444444-4444-4444-8444-444444444444',
+        decision: 'rejected',
+        reason: ' ',
+      }),
+    ).toThrow();
+    expect(() =>
+      transitionAttendancePeriodSchema.parse({
+        ...base,
+        periodMonth: '2026-08-02',
+        action: 'close',
+        reason: 'cutoff',
       }),
     ).toThrow();
   });

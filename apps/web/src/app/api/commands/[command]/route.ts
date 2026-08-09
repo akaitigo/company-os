@@ -3,6 +3,8 @@ import { proxyApi } from '../../../../lib/api-proxy';
 
 const paths: Readonly<Record<string, string>> = {
   attendance: '/v1/workforce/attendance',
+  'attendance-decisions': '/v1/workforce/attendance-decisions',
+  'attendance-periods': '/v1/workforce/attendance-period-events',
   leave: '/v1/workforce/leave-requests',
   requisition: '/v1/procurement/requisitions',
   journal: '/v1/finance/journals',

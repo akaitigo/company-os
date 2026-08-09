@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { entityId, tenantId } from '../../packages/kernel/src/index.js';
 import {
   AttendanceEntry,
+  AttendancePeriodTransition,
+  AttendanceReview,
   Employment,
   LeaveBalance,
   LeaveRequest,
@@ -10,6 +12,16 @@ const id = entityId('11111111-1111-4111-8111-111111111111');
 const worker = entityId('22222222-2222-4222-8222-222222222222');
 const tenant = tenantId('33333333-3333-4333-8333-333333333333');
 describe('workforce invariants', () => {
+  it('requires explicit review and period transition reasons', () => {
+    expect(new AttendanceReview('approved', ' verified ').reason).toBe('verified');
+    expect(() => new AttendanceReview('rejected', ' ')).toThrowError(/1 to 500/);
+    expect(new AttendancePeriodTransition('2026-08-01', 'close', 'payroll cutoff').action).toBe(
+      'close',
+    );
+    expect(() => new AttendancePeriodTransition('2026-08-02', 'close', 'cutoff')).toThrowError(
+      /first day/,
+    );
+  });
   it('enforces employment transitions and period', () => {
     const employment = new Employment(id, tenant, worker, { from: '2026-04-01' }, 2_400);
     employment.activate();
