@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+docker compose up -d keycloak
+curl --fail --silent --retry 30 --retry-all-errors --retry-delay 2 --max-time 3 \
+  http://127.0.0.1:8080/realms/master >/dev/null
+
+export KC_CLI_PASSWORD=local-development-only
+admin=(docker compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh)
+config="/tmp/company-os-reconcile-test-${$}.config"
+kc() { "${admin[@]}" "$@" --config "$config"; }
+kc config credentials --server http://localhost:8080 --realm master --user admin >/dev/null
+
+prefix="company-os-reconcile-${$}"
+prior_realm="${prefix}-prior"
+clean_realm="${prefix}-clean"
+temp_dir="$(mktemp -d)"
+cleanup() {
+  kc delete "realms/$prior_realm" >/dev/null 2>&1 || true
+  kc delete "realms/$clean_realm" >/dev/null 2>&1 || true
+  docker compose exec -T keycloak rm -f "$config" >/dev/null 2>&1 || true
+  rm -rf "$temp_dir"
+}
+trap cleanup EXIT
+
+prior_spec="$temp_dir/prior.json"
+clean_spec="$temp_dir/clean.json"
+interrupted_spec="$temp_dir/interrupted.json"
+jq --arg realm "$prior_realm" '.realm=$realm' infra/keycloak/reconciliation-v1.json > "$prior_spec"
+jq --arg realm "$clean_realm" '.realm=$realm' infra/keycloak/reconciliation-v1.json > "$clean_spec"
+jq --arg realm "$prior_realm" '
+  .realm=$realm |
+  .realmRoles += [{"name":"interrupted-additive-role"}] |
+  (.clients[] | select(.clientId=="company-os-web") | .protocolMappers) += [{
+    "name":"invalid-test-mapper",
+    "protocol":"openid-connect",
+    "protocolMapper":"company-os-missing-mapper",
+    "config":{}
+  }]
+' infra/keycloak/reconciliation-v1.json > "$interrupted_spec"
+
+kc create realms -s realm="$prior_realm" -s enabled=true >/dev/null
+kc create realms -s realm="$clean_realm" -s enabled=true >/dev/null
+kc create roles -r "$prior_realm" -s name=legacy-assignment >/dev/null
+kc create clients -r "$prior_realm" -s clientId=preserved-client -s publicClient=true \
+  -s directAccessGrantsEnabled=true -s standardFlowEnabled=false -s enabled=true >/dev/null
+kc create clients -r "$prior_realm" -s clientId=company-os-web -s publicClient=true \
+  -s standardFlowEnabled=true -s enabled=true -s 'redirectUris=["http://localhost:3000/*"]' \
+  -s 'webOrigins=["http://localhost:3000"]' >/dev/null
+kc create clients -r "$prior_realm" -s clientId=company-os-api -s bearerOnly=true -s enabled=true >/dev/null
+kc create users -r "$prior_realm" -s username=preserved-user -s enabled=true \
+  -s email=preserved-user@example.invalid -s emailVerified=true -s firstName=Preserved -s lastName=User >/dev/null
+kc set-password -r "$prior_realm" --username preserved-user --new-password preserved-password >/dev/null
+kc add-roles -r "$prior_realm" --uusername preserved-user --rolename legacy-assignment >/dev/null
+
+user_before="$(kc get users -r "$prior_realm" -q username=preserved-user -q exact=true | jq -r '.[0].id')"
+preserved_client_before="$(kc get clients -r "$prior_realm" -q clientId=preserved-client | jq -r '.[0].id')"
+access_token="$(curl --fail --silent --max-time 10 \
+  --data-urlencode client_id=preserved-client --data-urlencode grant_type=password \
+  --data-urlencode username=preserved-user --data-urlencode password=preserved-password \
+  "http://127.0.0.1:8080/realms/$prior_realm/protocol/openid-connect/token" | jq -r .access_token)"
+[[ "$access_token" != null && -n "$access_token" ]]
+sessions_before="$(kc get "users/$user_before/sessions" -r "$prior_realm" | jq length)"
+[[ "$sessions_before" -ge 1 ]]
+
+plan_output="$(KEYCLOAK_RECONCILIATION_SPEC="$prior_spec" ./scripts/reconcile-keycloak plan 2>&1)"
+grep -q '"name":"workforce-employee"' <<<"$plan_output"
+grep -q '"action":"create"' <<<"$plan_output"
+! grep -q 'local-development-only' <<<"$plan_output"
+
+KEYCLOAK_RECONCILIATION_SPEC="$prior_spec" ./scripts/reconcile-keycloak apply >/dev/null
+noop_output="$(KEYCLOAK_RECONCILIATION_SPEC="$prior_spec" ./scripts/reconcile-keycloak plan)"
+! jq -e 'select(.action != "no-op")' <<<"$noop_output" >/dev/null
+
+user_after="$(kc get users -r "$prior_realm" -q username=preserved-user -q exact=true | jq -r '.[0].id')"
+preserved_client_after="$(kc get clients -r "$prior_realm" -q clientId=preserved-client | jq -r '.[0].id')"
+[[ "$user_before" == "$user_after" && "$preserved_client_before" == "$preserved_client_after" ]]
+kc get "users/$user_after/role-mappings/realm" -r "$prior_realm" | jq -e 'any(.[]; .name=="legacy-assignment")' >/dev/null
+kc get "users/$user_after/sessions" -r "$prior_realm" | jq -e 'length >= 1' >/dev/null
+token_after="$(curl --fail --silent --max-time 10 \
+  --data-urlencode client_id=preserved-client --data-urlencode grant_type=password \
+  --data-urlencode username=preserved-user --data-urlencode password=preserved-password \
+  "http://127.0.0.1:8080/realms/$prior_realm/protocol/openid-connect/token" | jq -r .access_token)"
+[[ "$token_after" != null && -n "$token_after" && "$access_token" != "$token_after" ]]
+kc get roles/workforce-employee -r "$prior_realm" >/dev/null
+kc get users/profile -r "$prior_realm" | jq -e 'any(.attributes[]; .name=="tenant_id")' >/dev/null
+
+# A mid-apply failure releases the lease. Additive work already committed remains
+# harmless, and the valid desired state can be retried without deleting it.
+if KEYCLOAK_RECONCILIATION_SPEC="$interrupted_spec" ./scripts/reconcile-keycloak apply >/dev/null 2>&1; then
+  echo 'Reconciliation unexpectedly accepted an invalid protocol mapper.' >&2
+  exit 1
+fi
+kc get roles/interrupted-additive-role -r "$prior_realm" >/dev/null
+[[ "$(kc get clients -r "$prior_realm" -q clientId=company-os-reconcile-lock | jq length)" -eq 0 ]]
+KEYCLOAK_RECONCILIATION_SPEC="$prior_spec" ./scripts/reconcile-keycloak apply >/dev/null
+
+# Empty realm converges and remains idempotent.
+KEYCLOAK_RECONCILIATION_SPEC="$clean_spec" ./scripts/reconcile-keycloak apply >/dev/null
+clean_plan="$(KEYCLOAK_RECONCILIATION_SPEC="$clean_spec" ./scripts/reconcile-keycloak plan)"
+! jq -e 'select(.action != "no-op")' <<<"$clean_plan" >/dev/null
+
+# Existing lock and bad authentication fail before mutation.
+kc create clients -r "$prior_realm" -s clientId=company-os-reconcile-lock -s enabled=false >/dev/null
+if KEYCLOAK_RECONCILIATION_SPEC="$prior_spec" ./scripts/reconcile-keycloak apply >/dev/null 2>&1; then
+  echo 'Reconciliation ignored an existing lease.' >&2
+  exit 1
+fi
+lock_id="$(kc get clients -r "$prior_realm" -q clientId=company-os-reconcile-lock | jq -r '.[0].id')"
+kc delete "clients/$lock_id" -r "$prior_realm" >/dev/null
+if KC_CLI_PASSWORD=wrong KEYCLOAK_RECONCILIATION_SPEC="$prior_spec" ./scripts/reconcile-keycloak plan >/dev/null 2>&1; then
+  echo 'Reconciliation accepted invalid admin credentials.' >&2
+  exit 1
+fi
+
+echo 'Keycloak reconciliation tests passed: clean, upgrade, preservation, idempotency, interruption, lease, authentication.'

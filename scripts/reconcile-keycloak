@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+spec="${KEYCLOAK_RECONCILIATION_SPEC:-$repo_dir/infra/keycloak/reconciliation-v1.json}"
+mode="${1:-plan}"
+[[ "$mode" == plan || "$mode" == apply ]] || { echo 'Usage: scripts/reconcile-keycloak {plan|apply}' >&2; exit 64; }
+command -v jq >/dev/null || { echo 'jq is required.' >&2; exit 69; }
+
+jq -e '
+  .schemaVersion == 1 and (.desiredVersion | type == "string" and length > 0) and
+  (.realm | test("^[a-z0-9-]{1,64}$")) and
+  (.realmRoles | type == "array") and (.clients | type == "array") and
+  (.userProfileAttributes | type == "array") and
+  ([.realmRoles[].name] | length == (unique | length)) and
+  ([.clients[].clientId] | length == (unique | length)) and
+  (all(.clients[]; [.protocolMappers[].name] | length == (unique | length))) and
+  ([.userProfileAttributes[].name] | length == (unique | length))
+' "$spec" >/dev/null || { echo 'Invalid or duplicate Keycloak desired state.' >&2; exit 65; }
+
+realm="$(jq -r .realm "$spec")"
+desired_version="$(jq -r .desiredVersion "$spec")"
+server="${KEYCLOAK_URL:-http://localhost:8080}"
+admin_realm="${KEYCLOAK_ADMIN_REALM:-master}"
+admin_user="${KEYCLOAK_ADMIN_USER:-admin}"
+config_path="/tmp/company-os-kcadm-${$}.config"
+if [[ -n "${KEYCLOAK_KCADM:-}" ]]; then
+  [[ -x "$KEYCLOAK_KCADM" ]] || { echo 'KEYCLOAK_KCADM must be an executable path.' >&2; exit 69; }
+  kcadm=("$KEYCLOAK_KCADM")
+  cleanup() { rm -f "$config_path"; }
+else
+  docker compose -f "$repo_dir/compose.yaml" ps --status running keycloak | grep -q keycloak || {
+    echo 'Compose Keycloak is not running.' >&2; exit 69;
+  }
+  kcadm=(docker compose -f "$repo_dir/compose.yaml" exec -T -e KC_CLI_PASSWORD -e KC_CLI_CLIENT_SECRET keycloak /opt/keycloak/bin/kcadm.sh)
+  cleanup() { docker compose -f "$repo_dir/compose.yaml" exec -T keycloak rm -f "$config_path" >/dev/null 2>&1 || true; }
+fi
+trap cleanup EXIT
+
+kc() { timeout "${KEYCLOAK_TIMEOUT_SECONDS:-20}" "${kcadm[@]}" "$@" --config "$config_path"; }
+if [[ -n "${KEYCLOAK_ADMIN_CLIENT:-}" ]]; then
+  [[ -n "${KC_CLI_CLIENT_SECRET:-}" ]] || { echo 'KC_CLI_CLIENT_SECRET is required.' >&2; exit 65; }
+  kc config credentials --server "$server" --realm "$admin_realm" --client "$KEYCLOAK_ADMIN_CLIENT" >/dev/null
+else
+  [[ -n "${KC_CLI_PASSWORD:-}" ]] || { echo 'KC_CLI_PASSWORD is required.' >&2; exit 65; }
+  kc config credentials --server "$server" --realm "$admin_realm" --user "$admin_user" >/dev/null
+fi
+kc get "realms/$realm" >/dev/null
+
+audit() {
+  jq -cn --arg version "$desired_version" --arg action "$1" --arg type "$2" \
+    --arg name "$3" --arg result "$4" \
+    '{desiredVersion:$version,action:$action,resourceType:$type,name:$name,result:$result}'
+}
+
+# An apply must own the realm-scoped lease before reading current state. Otherwise
+# two processes can plan concurrently and the loser may later mutate from a stale
+# snapshot after the winner releases its lease.
+if [[ "$mode" == apply ]]; then
+  lock_client="company-os-reconcile-lock"
+  lock_payload="$(jq -cn --arg clientId "$lock_client" --arg version "$desired_version" \
+    '{clientId:$clientId,enabled:false,protocol:"openid-connect",attributes:{"company-os.desired-version":$version}}')"
+  if ! printf '%s' "$lock_payload" | kc create clients -r "$realm" -f - >/dev/null 2>&1; then
+    echo 'Another reconciliation or stale lock exists; no mutation performed.' >&2
+    exit 75
+  fi
+  lock_matches="$(kc get clients -r "$realm" -q clientId="$lock_client")"
+  lock_uuid="$(jq -r '.[0].id' <<<"$lock_matches")"
+  release_lock() { kc delete "clients/$lock_uuid" -r "$realm" >/dev/null 2>&1 || true; cleanup; }
+  trap release_lock EXIT
+fi
+
+current_roles="$(kc get roles -r "$realm")"
+current_profile="$(kc get users/profile -r "$realm")"
+mapfile -t desired_roles < <(jq -c '.realmRoles[]' "$spec")
+mapfile -t desired_clients < <(jq -c '.clients[]' "$spec")
+mapfile -t desired_attributes < <(jq -c '.userProfileAttributes[]' "$spec")
+declare -A client_json=() mapper_json=()
+for client in "${desired_clients[@]}"; do
+  client_id="$(jq -r .clientId <<<"$client")"
+  matches="$(kc get clients -r "$realm" -q clientId="$client_id")"
+  [[ "$(jq length <<<"$matches")" -le 1 ]] || { echo "Ambiguous duplicate client: $client_id" >&2; exit 65; }
+  client_json[$client_id]="$(jq -c '.[0] // null' <<<"$matches")"
+  if [[ "${client_json[$client_id]}" != null ]]; then
+    uuid="$(jq -r .id <<<"${client_json[$client_id]}")"
+    mapper_json[$client_id]="$(kc get "clients/$uuid/protocol-mappers/models" -r "$realm")"
+  else
+    mapper_json[$client_id]='[]'
+  fi
+done
+
+changes=0
+for role in "${desired_roles[@]}"; do
+  name="$(jq -r .name <<<"$role")"
+  if jq -e --arg name "$name" 'any(.[]; .name == $name)' <<<"$current_roles" >/dev/null; then
+    audit no-op realm-role "$name" planned
+  else
+    audit create realm-role "$name" planned
+    changes=$((changes + 1))
+  fi
+done
+
+for desired_client in "${desired_clients[@]}"; do
+  client_id="$(jq -r .clientId <<<"$desired_client")"
+  current="${client_json[$client_id]}"
+  if [[ "$current" == null ]]; then
+    audit create client "$client_id" planned
+    changes=$((changes + 1))
+  elif jq -e --argjson desired "$(jq -c .managed <<<"$desired_client")" \
+    '. as $current | all($desired | keys[]; . as $key | $desired[$key] == $current[$key])' <<<"$current" >/dev/null; then
+    audit no-op client "$client_id" planned
+  else
+    audit update client "$client_id" planned
+    changes=$((changes + 1))
+  fi
+  mapfile -t desired_mappers < <(jq -c '.protocolMappers[]' <<<"$desired_client")
+  for mapper in "${desired_mappers[@]}"; do
+    name="$(jq -r .name <<<"$mapper")"
+    matches="$(jq -c --arg name "$name" '[.[] | select(.name == $name)]' <<<"${mapper_json[$client_id]}")"
+    [[ "$(jq length <<<"$matches")" -le 1 ]] || { echo "Ambiguous duplicate mapper: $client_id/$name" >&2; exit 65; }
+    current_mapper="$(jq -c '.[0] // null' <<<"$matches")"
+    if [[ "$current_mapper" == null ]]; then
+      audit create protocol-mapper "$client_id/$name" planned; changes=$((changes + 1))
+    elif jq -e --argjson desired "$mapper" '. as $current | $desired.protocol == $current.protocol and $desired.protocolMapper == $current.protocolMapper and all($desired.config | keys[]; . as $key | $desired.config[$key] == $current.config[$key])' <<<"$current_mapper" >/dev/null; then
+      audit no-op protocol-mapper "$client_id/$name" planned
+    else
+      audit update protocol-mapper "$client_id/$name" planned; changes=$((changes + 1))
+    fi
+  done
+done
+
+for attribute in "${desired_attributes[@]}"; do
+  name="$(jq -r .name <<<"$attribute")"
+  current="$(jq -c --arg name "$name" '[.attributes[] | select(.name == $name)][0] // null' <<<"$current_profile")"
+  if [[ "$current" == null ]]; then
+    audit create user-profile-attribute "$name" planned; changes=$((changes + 1))
+  elif [[ "$(jq -Sc . <<<"$current")" == "$(jq -Sc . <<<"$attribute")" ]]; then
+    audit no-op user-profile-attribute "$name" planned
+  else
+    audit update user-profile-attribute "$name" planned; changes=$((changes + 1))
+  fi
+done
+
+[[ "$mode" == plan ]] && exit 0
+
+for role in "${desired_roles[@]}"; do
+  name="$(jq -r .name <<<"$role")"
+  if ! jq -e --arg name "$name" 'any(.[]; .name == $name)' <<<"$current_roles" >/dev/null; then
+    printf '%s' "$role" | kc create roles -r "$realm" -f - >/dev/null
+    audit create realm-role "$name" applied
+  fi
+done
+
+for desired_client in "${desired_clients[@]}"; do
+  client_id="$(jq -r .clientId <<<"$desired_client")"
+  current="${client_json[$client_id]}"
+  if [[ "$current" == null ]]; then
+    payload="$(jq -c '{clientId} + .managed' <<<"$desired_client")"
+    printf '%s' "$payload" | kc create clients -r "$realm" -f - >/dev/null
+    audit create client "$client_id" applied
+  else
+    merged="$(jq -c --argjson managed "$(jq -c .managed <<<"$desired_client")" '. + $managed' <<<"$current")"
+    uuid="$(jq -r .id <<<"$current")"
+    if [[ "$(jq -Sc --argjson managed "$(jq -c .managed <<<"$desired_client")" '. as $current | [$managed | keys[] as $key | $managed[$key] == $current[$key]] | all' <<<"$current")" != true ]]; then
+      printf '%s' "$merged" | kc update "clients/$uuid" -r "$realm" -f - >/dev/null
+      audit update client "$client_id" applied
+    fi
+  fi
+  refreshed="$(kc get clients -r "$realm" -q clientId="$client_id")"
+  uuid="$(jq -r '.[0].id' <<<"$refreshed")"
+  current_mappers="$(kc get "clients/$uuid/protocol-mappers/models" -r "$realm")"
+  mapfile -t desired_mappers < <(jq -c '.protocolMappers[]' <<<"$desired_client")
+  for mapper in "${desired_mappers[@]}"; do
+    name="$(jq -r .name <<<"$mapper")"
+    matches="$(jq -c --arg name "$name" '[.[] | select(.name == $name)]' <<<"$current_mappers")"
+    current_mapper="$(jq -c '.[0] // null' <<<"$matches")"
+    if [[ "$current_mapper" == null ]]; then
+      printf '%s' "$mapper" | kc create "clients/$uuid/protocol-mappers/models" -r "$realm" -f - >/dev/null
+      audit create protocol-mapper "$client_id/$name" applied
+    elif ! jq -e --argjson desired "$mapper" '. as $current | $desired.protocol == $current.protocol and $desired.protocolMapper == $current.protocolMapper and all($desired.config | keys[]; . as $key | $desired.config[$key] == $current.config[$key])' <<<"$current_mapper" >/dev/null; then
+      mapper_id="$(jq -r .id <<<"$current_mapper")"
+      payload="$(jq -c --argjson desired "$mapper" '. * $desired | .config = (.config + $desired.config)' <<<"$current_mapper")"
+      printf '%s' "$payload" | kc update "clients/$uuid/protocol-mappers/models/$mapper_id" -r "$realm" -f - >/dev/null
+      audit update protocol-mapper "$client_id/$name" applied
+    fi
+  done
+done
+
+merged_profile="$current_profile"
+for attribute in "${desired_attributes[@]}"; do
+  name="$(jq -r .name <<<"$attribute")"
+  merged_profile="$(jq -c --arg name "$name" --argjson desired "$attribute" '
+    .attributes = ([.attributes[] | select(.name != $name)] + [$desired])
+  ' <<<"$merged_profile")"
+done
+if [[ "$(jq -Sc . <<<"$merged_profile")" != "$(jq -Sc . <<<"$current_profile")" ]]; then
+  printf '%s' "$merged_profile" | kc update users/profile -r "$realm" -f - >/dev/null
+  audit update user-profile desired-attributes applied
+fi
+
+final_plan="$($0 plan)"
+if jq -e 'select(.action != "no-op")' <<<"$final_plan" >/dev/null; then
+  echo 'Reconciliation did not converge.' >&2
+  exit 1
+fi
+audit complete realm "$realm" applied

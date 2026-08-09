@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "desiredVersion": "2026-08-09.1",
+  "realm": "company-os",
+  "realmRoles": [
+    { "name": "organization-admin" },
+    { "name": "organization-reader" },
+    { "name": "workforce-admin" },
+    { "name": "workforce-manager" },
+    { "name": "workforce-employee" },
+    { "name": "workforce-hr" },
+    { "name": "procurement-buyer" },
+    { "name": "procurement-requester" },
+    { "name": "procurement-approver" },
+    { "name": "payment-preparer" },
+    { "name": "payment-approver" },
+    { "name": "finance-accountant" },
+    { "name": "finance-controller" }
+  ],
+  "clients": [
+    {
+      "clientId": "company-os-api",
+      "managed": {
+        "enabled": true,
+        "publicClient": false,
+        "bearerOnly": true,
+        "protocol": "openid-connect"
+      },
+      "protocolMappers": []
+    },
+    {
+      "clientId": "company-os-web",
+      "managed": {
+        "enabled": true,
+        "publicClient": true,
+        "standardFlowEnabled": true,
+        "directAccessGrantsEnabled": false,
+        "redirectUris": ["http://localhost:3000/*"],
+        "webOrigins": ["http://localhost:3000"],
+        "protocol": "openid-connect"
+      },
+      "protocolMappers": [
+        {
+          "name": "audience-company-os-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": { "included.client.audience": "company-os-api", "access.token.claim": "true" }
+        },
+        {
+          "name": "tenant-id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "realm-roles-flat",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "userProfileAttributes": [
+    {
+      "name": "tenant_id",
+      "displayName": "Tenant ID",
+      "permissions": { "view": ["admin", "user"], "edit": ["admin"] },
+      "multivalued": false
+    }
+  ]
+}

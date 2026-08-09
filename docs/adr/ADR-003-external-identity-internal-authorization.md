@@ -46,4 +46,6 @@ MFA、OIDC、SAML、recovery、credentialを安全に自作する価値は低い
 - high-risk commandはfresh authorization/re-authを要求可能にする。
 - IdP unavailable時の新規authはfail closed。break-glassは独立account/期限/二者承認。
 - Keycloak preview/non-public APIへ依存しない。major/minor upgradeはbackup/rehearsal後に実施。
-
+- realm importは初回bootstrapだけに使う。既存realmのupgradeはversioned desired stateに対する`plan`/`apply` reconciliationで行い、user、credential、session、role assignment、未知resourceを削除しない。
+- `apply`はrealm内の専用clientをleaseとしてcurrent state取得前に獲得し、同時変更とstale snapshotを拒否する。途中失敗はleaseを解放し、部分適用済みのadditive stateを保持したまま同じdesired stateを再実行する。
+- 管理credentialは環境またはsecret storeから`kcadm`へ渡し、command line、desired state、audit出力へ保存しない。

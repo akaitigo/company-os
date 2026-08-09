@@ -13,4 +13,5 @@ pnpm test
 pnpm build
 docker compose config --quiet
 ./scripts/check-migrations
+./scripts/check-keycloak-config
 git diff --check

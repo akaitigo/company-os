@@ -57,6 +57,9 @@ flowchart LR
 | THR-MIG-001 | 改変・欠落したmigrationを適用 | schema/data integrity侵害 | release checksum、filename/version一意、owner限定 | DB ledgerとdrift status | checksum/filename negative test |
 | THR-MIG-002 | 並行deployまたは中断後の誤再実行 | 二重DDL、不完全schema、停止 | DB advisory lock、transaction、running state | verifyによるrecover、failed停止 | concurrency/interruption test |
 | THR-MIG-003 | backupなしの本番migrationまたはowner credential漏洩 | 復旧不能、DB全権侵害 | backup evidence gate、secret manager/passfile、runtime role分離 | break-glass変更記録、ledger、restore演習 | production gate/privilege/restore test |
+| THR-IAM-001 | realm importの再実行や破壊的同期でuser、credential、role assignment、sessionを損失 | 全社login不能、権限破壊 | additive reconciliation、managed field限定、未知resource保持 | plan/audit、upgrade前backup | 既存realm preservation test |
+| THR-IAM-002 | 並行reconciliationまたは途中失敗でIAM設定が不整合 | login不能、claim/権限欠落 | mutation前のrealm lease、冪等操作、forward-fix | convergence plan、lease cleanup | lock/interruption/retry test |
+| THR-IAM-003 | admin credentialが引数、log、artifactへ漏洩 | IdP全権侵害 | secret env/file、出力redaction、専用admin client | credential rotation、audit review | wrong-secret/secret-absence test |
 | THR-DOS-001 | unbounded report/export/rule evaluation | availability/cost | NFR limits、async quotas、cancellation | saturation metrics | load/limit test |
 
 ## Abuse cases
