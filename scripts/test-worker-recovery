@@ -62,6 +62,6 @@ for _ in {1..40}; do
   sleep 0.25
 done
 [[ "$projected" == '1' ]]
-rg -q 'worker.database.retry' "$worker_log"
-rg -q 'worker.database.recovered' "$worker_log"
+grep -q 'worker.database.retry' "$worker_log"
+grep -q 'worker.database.recovered' "$worker_log"
 echo 'Worker recovered from PostgreSQL restart and delivered the queued event.'
