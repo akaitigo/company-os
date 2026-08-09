@@ -1,5 +1,6 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { createServer, type Server } from 'node:http';
+import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { Pool } from 'pg';
 import { z } from 'zod';
@@ -15,6 +16,22 @@ const eventSchema = z.object({
 });
 export const ORGANIZATION_EVENT_TYPE = 'organization.unit.created.v1';
 const MAX_ATTEMPTS = 20;
+const MAX_SECRET_BYTES = 8_192;
+
+function databaseUrl(): string | undefined {
+  const fileName = process.env['DATABASE_URL_FILE'];
+  const direct = process.env['DATABASE_URL'];
+  if (fileName === undefined) return direct;
+  if (direct !== undefined)
+    throw new Error('DATABASE_URL and DATABASE_URL_FILE cannot both be set');
+  const value = readFileSync(fileName, { encoding: 'utf8', flag: 'r' });
+  if (Buffer.byteLength(value) > MAX_SECRET_BYTES)
+    throw new Error('DATABASE_URL_FILE exceeds 8192 bytes');
+  const normalized = value.endsWith('\n') ? value.slice(0, -1) : value;
+  if (normalized.length === 0 || normalized.includes('\n') || normalized.includes('\0'))
+    throw new Error('DATABASE_URL_FILE has invalid content');
+  return normalized;
+}
 
 export interface WorkerHealth {
   ready: boolean;
@@ -174,7 +191,7 @@ export async function runWorker(pool: Pool, options: RunOptions): Promise<void> 
 
 async function run(): Promise<void> {
   const pool = new Pool({
-    connectionString: process.env['DATABASE_URL'],
+    connectionString: databaseUrl(),
     max: 4,
     connectionTimeoutMillis: 3_000,
   });

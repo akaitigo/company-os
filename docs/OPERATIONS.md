@@ -27,6 +27,19 @@ containerは`docker build -f infra/containers/web.Dockerfile -t company-os-web:<
 9. Webの`ARTIFACT.sha256`、container image digest、sizeをrelease evidenceへ記録する。registry上のdigestでdeployし、tagをrollback identityにしない。
 10. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
 
+### Production runtime bundle（VM）
+
+`infra/runtime/compose.production.yaml`は外部PostgreSQL、Keycloak、OpenTelemetryへ接続するAPI、worker、Webだけを展開し、DB/IdPを作成・変更しません。3 imageはregistryの`@sha256:` digestで指定し、tagや`latest`は`./scripts/runtime-bundle validate`が拒否します。全serviceはUID/GID 10001、read-only rootfs、`/tmp` 16 MiB、capability drop ALL、no-new-privileges、PID 128、CPU/memory上限、10秒停止猶予で動作します。
+
+1. `infra/runtime/production.env.example`をrepository外へコピーし、image digestとHTTPS endpointを設定する。
+2. database runtime URL、migration owner URL、session secret、backup signing keyをそれぞれ1行・8192 bytes以下の別fileへ保存する。DB URLの`sslrootcert`はコンテナ内の`/run/secrets/database_ca.crt`を指定し、検証済みCA certificateのhost pathを`DATABASE_CA_CERT_FILE`へ設定する。VM上のservice UID 10001をowner、runtime-bundle実行者の専用groupをgroupとし、mode 0440にする（例: `chown 10001:company-os-operator`、`chmod 0440`）。group writeとother accessは禁止する。値をenvironment file、Compose command、imageへ記載しない。
+3. 同じreleaseの`dist/web`を配置し、`./scripts/runtime-bundle validate /secure/company-os/runtime.env`を実行する。offline preflightとCompose renderingの両方が成功しなければ進めない。
+4. migration、Keycloak reconciliation、backup rehearsalを上記Deploy手順で完了する。
+5. `./scripts/runtime-bundle up /secure/company-os/runtime.env`を実行する。connected preflightが全件passした場合だけ3 serviceを`--wait`で起動する。同じcommandの再実行は同じdigestを再利用する。
+6. `./scripts/runtime-bundle evidence /secure/company-os/runtime.env > runtime-evidence.json`でcontract version、digest、health、UID、read-only状態を記録する。このJSONにsecret値は含まれない。
+
+停止は`./scripts/runtime-bundle down /secure/company-os/runtime.env`でapplication container/networkだけを削除します。障害やcredential rotationでsecret/CA fileが失われていても停止できます。DB、IdP、telemetry、secret file、業務データは削除しません。rollbackは直前のruntime environment fileを複製せず、change recordに記録した3 digestへ明示的に差し戻し、connected preflight後に`up`します。
+
 `status`はDBを書き換えません。runnerはDB単位のadvisory lock、SHA-256 ledger、各migrationのverify SQLで二重実行・改変・不完全適用を拒否します。`running`はprocess中断の可能性を示すため`./scripts/migrate recover`でschemaを検証し、成功時のみ`applied`、不一致時は`failed`にします。`apply`はfailed行そのものを再実行せず、より新しい未登録のforward-fixだけを適用できます（failedが残るため終了statusは非zero）。その後`recover`で元のverifyを再検証します。release済みSQLは編集せず、新しいforward migrationを追加して`checksums.sha256`を更新します。
 
 ## Rollback / forward-fix

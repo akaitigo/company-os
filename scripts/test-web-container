@@ -6,8 +6,13 @@ cd "$repo_dir"
 image="company-os-web:artifact-test"
 container="company-os-web-artifact-test-${$}"
 temp_dir="$(mktemp -d)"
+api_pid=''
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
+  if [[ -n "$api_pid" ]] && kill -0 "$api_pid" 2>/dev/null; then
+    kill -TERM "$api_pid" 2>/dev/null || true
+    wait "$api_pid" 2>/dev/null || true
+  fi
   rm -rf "$temp_dir"
 }
 trap cleanup EXIT
@@ -17,13 +22,21 @@ DOCKER_CONFIG="${DOCKER_CONFIG:-$temp_dir/docker-config}" docker build \
   --file infra/containers/web.Dockerfile --tag "$image" . >/dev/null
 
 [[ "$(docker image inspect "$image" --format '{{.Config.User}}')" == '10001:10001' ]]
+node -e '
+  require("node:http").createServer((request, response) => {
+    response.writeHead(request.url === "/health/ready" ? 200 : 404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ status: "ready", service: "api" }));
+  }).listen(39001, "0.0.0.0");
+' >"$temp_dir/api.log" 2>&1 &
+api_pid=$!
 docker run --detach --name "$container" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  --add-host host.docker.internal:host-gateway \
   --publish 127.0.0.1:3101:3000 \
   --env SESSION_SECRET=container-test-session-secret-at-least-32-characters \
   --env OIDC_ISSUER=https://idp.example.invalid/realms/company-os \
   --env OIDC_CLIENT_ID=company-os-web \
   --env OIDC_REDIRECT_URI=http://localhost:3101/auth/callback \
-  --env API_INTERNAL_URL=http://host.docker.internal:3001 \
+  --env API_INTERNAL_URL=http://host.docker.internal:39001 \
   "$image" >/dev/null
 
 for _ in $(seq 1 30); do

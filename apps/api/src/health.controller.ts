@@ -1,10 +1,10 @@
 import { Controller, Get, ServiceUnavailableException, SetMetadata } from '@nestjs/common';
 import type { OnApplicationShutdown } from '@nestjs/common';
-import { Pool } from 'pg';
+import { createDatabasePool } from './database-pool.js';
 
 @Controller()
 export class HealthController implements OnApplicationShutdown {
-  private readonly pool = new Pool({
+  private readonly pool = createDatabasePool({
     connectionString: process.env['DATABASE_URL'],
     max: 1,
     connectionTimeoutMillis: 2_000,

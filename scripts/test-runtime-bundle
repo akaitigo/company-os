@@ -1,0 +1,172 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+temp_dir="$(mktemp -d)"
+api_container="company-os-runtime-api-${$}"
+worker_container="company-os-runtime-worker-${$}"
+web_container="company-os-runtime-web-${$}"
+cleanup() {
+  docker rm -f "$api_container" "$worker_container" "$web_container" >/dev/null 2>&1 || true
+  rm -rf "$temp_dir"
+}
+trap cleanup EXIT
+
+wait_health() {
+  local container="$1" expected="$2"
+  for _ in $(seq 1 40); do
+    [[ "$(docker inspect -f '{{.State.Health.Status}}' "$container" 2>/dev/null)" == "$expected" ]] && return
+    sleep 1
+  done
+  docker logs "$container" >&2 || true
+  echo "$container did not become $expected." >&2
+  exit 1
+}
+
+docker build -q -f infra/containers/api.Dockerfile -t company-os-api:runtime-test . >/dev/null
+docker build -q -f infra/containers/worker.Dockerfile -t company-os-worker:runtime-test . >/dev/null
+docker build -q -f infra/containers/web.Dockerfile -t company-os-web:runtime-test . >/dev/null
+
+for image in company-os-api:runtime-test company-os-worker:runtime-test company-os-web:runtime-test; do
+  [[ "$(docker image inspect -f '{{.Config.User}}' "$image")" == '10001:10001' ]]
+  compressed_bytes="$(docker save "$image" | gzip -1 | wc -c | tr -d ' ')"
+  if [[ "$image" == company-os-api:* ]]; then
+    [[ "$compressed_bytes" -le 157286400 ]]
+  else
+    [[ "$compressed_bytes" -le 104857600 ]]
+  fi
+done
+for image in company-os-api:runtime-test company-os-worker:runtime-test; do
+  ! docker run --rm --entrypoint sh "$image" -c \
+    'find /app -type f \( -name "*.ts" -o -name "*.map" \) -print -quit | grep -q .'
+done
+
+docker compose up -d --wait postgres >/dev/null
+secret_seed='runtime-container-secret-that-must-not-leak'
+printf '%s\n' 'postgresql://company_os:local-development-only@postgres:5432/company_os' > "$temp_dir/database-url"
+printf '%s\n' "$secret_seed-session-value" > "$temp_dir/session-secret"
+chmod 440 "$temp_dir/database-url" "$temp_dir/session-secret"
+docker run --rm --volume "$temp_dir:/secrets" --entrypoint chown \
+  node:24.14.0-alpine3.23@sha256:7fddd9ddeae8196abf4a3ef2de34e11f7b1a722119f91f28ddf1e99dcafdf114 \
+  "10001:$(id -g)" /secrets/database-url /secrets/session-secret
+
+runtime_flags=(
+  --network company-os_default --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m
+  --cap-drop ALL --security-opt no-new-privileges --pids-limit 128
+)
+docker run -d --name "$api_container" "${runtime_flags[@]}" --memory 512m --cpus 1 \
+  --mount "type=bind,src=$temp_dir/database-url,dst=/run/secrets/database_url,readonly" \
+  -e DATABASE_URL_FILE=/run/secrets/database_url \
+  -e OIDC_ISSUER=https://id.company.test/realms/company-os -e OIDC_AUDIENCE=company-os-api \
+  company-os-api:runtime-test >/dev/null
+docker run -d --name "$worker_container" "${runtime_flags[@]}" --memory 256m --cpus 0.5 \
+  --mount "type=bind,src=$temp_dir/database-url,dst=/run/secrets/database_url,readonly" \
+  -e DATABASE_URL_FILE=/run/secrets/database_url company-os-worker:runtime-test >/dev/null
+docker run -d --name "$web_container" "${runtime_flags[@]}" --memory 256m --cpus 0.5 \
+  --mount "type=bind,src=$temp_dir/session-secret,dst=/run/secrets/session_secret,readonly" \
+  -e SESSION_SECRET_FILE=/run/secrets/session_secret \
+  -e OIDC_ISSUER=https://id.company.test/realms/company-os -e OIDC_CLIENT_ID=company-os-web \
+  -e OIDC_REDIRECT_URI=https://company.company.test/auth/callback \
+  -e "API_INTERNAL_URL=http://$api_container:3001" company-os-web:runtime-test >/dev/null
+
+for container in "$api_container" "$worker_container" "$web_container"; do
+  wait_health "$container" healthy
+  docker inspect -f '{{.Config.User}} {{.HostConfig.ReadonlyRootfs}} {{json .HostConfig.CapDrop}} {{.HostConfig.PidsLimit}}' \
+    "$container" | grep -Fxq '10001:10001 true ["ALL"] 128'
+  ! docker inspect "$container" | grep -Fq "$secret_seed"
+  ! docker logs "$container" 2>&1 | grep -Fq "$secret_seed"
+done
+
+docker compose stop postgres >/dev/null
+for service in "$api_container:3001" "$worker_container:3002"; do
+  container="${service%:*}" port="${service##*:}"
+  for _ in $(seq 1 20); do
+    code="$(docker exec "$container" node -e \
+      "fetch('http://127.0.0.1:$port/health/ready').then(async r=>{console.log(r.status)}).catch(()=>process.exit(1))" 2>/dev/null || true)"
+    [[ "$code" == 503 ]] && break
+    sleep 1
+  done
+  [[ "$code" == 503 ]]
+done
+docker compose start postgres >/dev/null
+for _ in $(seq 1 30); do
+  docker compose exec -T postgres pg_isready -U company_os -d company_os >/dev/null 2>&1 && break
+  sleep 1
+done
+wait_health "$api_container" healthy
+wait_health "$worker_container" healthy
+
+for container in "$api_container" "$worker_container" "$web_container"; do
+  started=$(date +%s)
+  docker stop --time 10 "$container" >/dev/null
+  [[ $(( $(date +%s) - started )) -le 10 ]]
+  exit_code="$(docker inspect -f '{{.State.ExitCode}}' "$container")"
+  [[ "$exit_code" == 0 || "$exit_code" == 143 ]]
+done
+
+# Offline operator validation uses immutable references and never emits secrets.
+printf '%s\n' 'postgresql://runtime_user:runtime-password@db.company.test/company_os?sslmode=verify-full&sslrootcert=/run/secrets/database_ca.crt' > "$temp_dir/production-database-url"
+printf '%s\n' 'postgresql://migration_owner:migration-password@db.company.test/company_os?sslmode=verify-full&sslrootcert=/run/secrets/database_ca.crt' > "$temp_dir/migration-url"
+printf '%s\n' 'backup-signing-key-at-least-thirty-two-characters' > "$temp_dir/signing-key"
+printf '%s\n' 'test-ca-certificate-placeholder' > "$temp_dir/database-ca.crt"
+chmod 440 "$temp_dir/production-database-url" "$temp_dir/migration-url" "$temp_dir/signing-key" "$temp_dir/database-ca.crt"
+docker run --rm --volume "$temp_dir:/secrets" --entrypoint chown \
+  node:24.14.0-alpine3.23@sha256:7fddd9ddeae8196abf4a3ef2de34e11f7b1a722119f91f28ddf1e99dcafdf114 \
+  "10001:$(id -g)" /secrets/production-database-url /secrets/migration-url /secrets/signing-key /secrets/database-ca.crt
+sed -e "s|/secure/company-os/database-url|$temp_dir/production-database-url|" \
+  -e "s|/secure/company-os/database-ca.crt|$temp_dir/database-ca.crt|" \
+  -e "s|/secure/company-os/migration-database-url|$temp_dir/migration-url|" \
+  -e "s|/secure/company-os/session-secret|$temp_dir/session-secret|" \
+  -e "s|/secure/company-os/migration-backup-signing-key|$temp_dir/signing-key|" \
+  -e 's|registry.example.invalid|registry.example.com|g' \
+  -e 's|https://id.example.invalid|https://id.company.test|' \
+  -e 's|https://company.example.invalid|https://company.company.test|' \
+  -e 's|https://otel.example.invalid|https://otel.company.test|' \
+  infra/runtime/production.env.example > "$temp_dir/runtime.env"
+chmod 600 "$temp_dir/runtime.env"
+./scripts/runtime-bundle validate "$temp_dir/runtime.env" > "$temp_dir/validation.json"
+jq -e '.status == "pass" and .profile == "SMB" and .mode == "validate"' \
+  "$temp_dir/validation.json" >/dev/null
+! grep -Fq "$secret_seed" "$temp_dir/validation.json"
+rendered="$(docker compose --env-file "$temp_dir/runtime.env" -f infra/runtime/compose.production.yaml config)"
+[[ "$(grep -c 'user: 10001:10001' <<< "$rendered")" == 4 ]]
+[[ "$(grep -c 'OTEL_EXPORTER_OTLP_ENDPOINT: https://otel.company.test:4318' <<< "$rendered")" == 3 ]]
+[[ "$(grep -c 'target: database_ca.crt' <<< "$rendered")" == 2 ]]
+
+sed 's|@sha256:[a-f0-9]*|:latest|' "$temp_dir/runtime.env" > "$temp_dir/mutable.env"
+if ./scripts/runtime-bundle validate "$temp_dir/mutable.env" >/dev/null 2>&1; then
+  echo 'Runtime bundle accepted mutable image tags.' >&2
+  exit 1
+fi
+cp "$temp_dir/runtime.env" "$temp_dir/unknown.env"
+printf '\nUNKNOWN_SETTING=value\n' >> "$temp_dir/unknown.env"
+if ./scripts/runtime-bundle validate "$temp_dir/unknown.env" >/dev/null 2>&1; then
+  echo 'Runtime bundle accepted an unknown setting.' >&2
+  exit 1
+fi
+cp "$temp_dir/runtime.env" "$temp_dir/dev-profile.env"
+sed -i 's/^DEPLOYMENT_PROFILE=SMB$/DEPLOYMENT_PROFILE=DEV/' "$temp_dir/dev-profile.env"
+if ./scripts/runtime-bundle validate "$temp_dir/dev-profile.env" >/dev/null 2>&1; then
+  echo 'Runtime bundle accepted a development profile.' >&2
+  exit 1
+fi
+cp "$temp_dir/signing-key" "$temp_dir/insecure-signing-key"
+sed "s|$temp_dir/signing-key|$temp_dir/insecure-signing-key|" "$temp_dir/runtime.env" > "$temp_dir/insecure-secret.env"
+if ./scripts/runtime-bundle validate "$temp_dir/insecure-secret.env" >/dev/null 2>&1; then
+  echo 'Runtime bundle accepted a group/world-readable secret.' >&2
+  exit 1
+fi
+
+cp "$temp_dir/database-ca.crt" "$temp_dir/inaccessible-ca.crt"
+chmod 600 "$temp_dir/inaccessible-ca.crt"
+sed "s|$temp_dir/database-ca.crt|$temp_dir/inaccessible-ca.crt|" "$temp_dir/runtime.env" > "$temp_dir/inaccessible-ca.env"
+if ./scripts/runtime-bundle validate "$temp_dir/inaccessible-ca.env" >/dev/null 2>&1; then
+  echo 'Runtime bundle accepted a CA file inaccessible to UID 10001.' >&2
+  exit 1
+fi
+
+rm -f "$temp_dir/production-database-url" "$temp_dir/session-secret" "$temp_dir/database-ca.crt"
+./scripts/runtime-bundle down "$temp_dir/runtime.env" >/dev/null
+
+echo 'Runtime bundle passed: immutable validation, nonroot/read-only containers, health recovery, redaction and graceful shutdown.'

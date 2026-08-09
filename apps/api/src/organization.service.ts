@@ -1,23 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { createAuditIntent } from '@company-os/audit';
 import { authorize } from '@company-os/authorization';
 import type { CreateOrganizationUnitInput, RequestContext } from '@company-os/contracts';
 import { createOutboxEnvelope } from '@company-os/integration';
 import { entityId, tenantId } from '@company-os/kernel';
 import { OrganizationUnit } from '@company-os/organization';
-import { Pool } from 'pg';
+import { createDatabasePool } from './database-pool.js';
 
 export class AccessDeniedError extends Error {}
 
 @Injectable()
-export class OrganizationService {
-  private readonly pool = new Pool({
+export class OrganizationService implements OnApplicationShutdown {
+  private readonly pool = createDatabasePool({
     connectionString: process.env['DATABASE_URL'],
     max: 10,
     connectionTimeoutMillis: 3_000,
     idleTimeoutMillis: 30_000,
   });
+
+  async onApplicationShutdown(): Promise<void> {
+    await this.pool.end();
+  }
 
   async create(
     input: CreateOrganizationUnitInput,

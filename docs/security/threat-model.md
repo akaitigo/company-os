@@ -62,6 +62,9 @@ flowchart LR
 | THR-IAM-003 | admin credentialが引数、log、artifactへ漏洩 | IdP全権侵害 | secret env/file、出力redaction、専用admin client | credential rotation、audit review | wrong-secret/secret-absence test |
 | THR-CFG-001 | placeholder、平文transport、同一DB role、改変artifactのままproduction deploy | credential漏洩、migration権限奪取、supply-chain侵害 | versioned contract、SMB HTTPS/DB verify-full、runtime/owner分離、artifact checksum | read-only preflightのredacted JSONをchange evidenceへ保存 | offline/connected/privilege/TLS/tamper tests |
 | THR-CFG-002 | preflightが秘密値を出力または検査中に外部状態を変更 | credential漏洩、予期しない本番変更 | 固定check ID/codeのみ出力、validateはoffline、checkはread-only、5秒timeout | seeded secret scan、DB/IAM state比較 | redaction/offline/timeout tests |
+| THR-RUN-001 | mutable tag、root/writable container、過剰capabilityでruntimeを展開 | artifact差替え、host侵害、改変永続化 | digest必須、UID 10001、read-only、cap drop ALL、no-new-privileges、resource上限 | runtime evidenceとcontainer inspect | immutable/negative/container policy tests |
+| THR-RUN-002 | secretをenvironment、argv、image、logへ保存 | DB/session credential漏洩 | UID 10001所有・operator group read-onlyのfile mount、`*_FILE`、8192 byte/単一行制限、redacted evidence | seeded secret scan、ownership/mode/inspect/history review | file/direct conflict、inspect/log/evidence tests |
+| THR-RUN-003 | DB再起動でAPI/workerが停止またはreadyを誤報 | 業務停止、request失敗、outbox遅延 | pool error処理、dependency-backed readiness、bounded reconnect、healthcheck | disconnected/recovered structured event | real DB stop/restart container test |
 | THR-DOS-001 | unbounded report/export/rule evaluation | availability/cost | NFR limits、async quotas、cancellation | saturation metrics | load/limit test |
 
 ## Abuse cases

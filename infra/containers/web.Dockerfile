@@ -19,4 +19,6 @@ COPY --chown=10001:10001 scripts/verify-web-artifact /app/scripts/verify-web-art
 ENV NODE_ENV=production WEB_HOST=0.0.0.0 PORT=3000
 USER 10001:10001
 EXPOSE 3000
+HEALTHCHECK --interval=5s --timeout=3s --start-period=30s --retries=12 \
+  CMD node -e "fetch('http://127.0.0.1:3000/api/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["./scripts/start-web"]

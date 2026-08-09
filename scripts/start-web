@@ -14,6 +14,16 @@ fail() { echo "Web startup refused: $1" >&2; exit 78; }
 
 WEB_ARTIFACT_DIR="$artifact_dir" "$repo_dir/scripts/verify-web-artifact" || fail 'artifact checksum verification failed.'
 
+if [[ -n "${SESSION_SECRET_FILE:-}" ]]; then
+  [[ -z "${SESSION_SECRET:-}" ]] || fail 'SESSION_SECRET and SESSION_SECRET_FILE cannot both be set.'
+  [[ -f "$SESSION_SECRET_FILE" ]] || fail 'SESSION_SECRET_FILE is not readable.'
+  [[ "$(wc -c < "$SESSION_SECRET_FILE")" -le 8192 ]] || fail 'SESSION_SECRET_FILE exceeds 8192 bytes.'
+  mapfile -t session_secret_lines < "$SESSION_SECRET_FILE"
+  [[ "${#session_secret_lines[@]}" -eq 1 && -n "${session_secret_lines[0]}" ]] || fail 'SESSION_SECRET_FILE must contain exactly one non-empty line.'
+  SESSION_SECRET="${session_secret_lines[0]}"
+  unset session_secret_lines
+  export SESSION_SECRET
+fi
 [[ -n "${SESSION_SECRET:-}" && ${#SESSION_SECRET} -ge 32 ]] || fail 'SESSION_SECRET must contain at least 32 characters.'
 for variable in OIDC_ISSUER OIDC_CLIENT_ID OIDC_REDIRECT_URI API_INTERNAL_URL; do
   [[ -n "${!variable:-}" ]] || fail "$variable is required."
