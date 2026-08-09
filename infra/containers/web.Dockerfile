@@ -15,6 +15,7 @@ RUN apk add --no-cache bash \
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /workspace/dist/web /app/dist/web
 COPY --chown=10001:10001 scripts/start-web /app/scripts/start-web
+COPY --chown=10001:10001 scripts/verify-web-artifact /app/scripts/verify-web-artifact
 ENV NODE_ENV=production WEB_HOST=0.0.0.0 PORT=3000
 USER 10001:10001
 EXPOSE 3000

@@ -19,6 +19,21 @@ checksum_for() {
 }
 
 migration_database="${MIGRATION_DATABASE:-company_os}"
+if [[ -n "${MIGRATION_DATABASE_URL:-}" ]]; then
+  mapfile -d '' -t migration_connection < <(node -e '
+    const url = new URL(process.env.MIGRATION_DATABASE_URL);
+    if (!["postgres:", "postgresql:"].includes(url.protocol)) process.exit(1);
+    const value = name => url.searchParams.get(name) ?? "";
+    for (const item of [url.hostname, url.port || "5432", decodeURIComponent(url.username), decodeURIComponent(url.password), decodeURIComponent(url.pathname.slice(1)), value("sslmode"), value("sslrootcert")]) process.stdout.write(`${item}\0`);
+  ')
+  [[ ${#migration_connection[@]} -eq 7 ]] || { echo 'MIGRATION_DATABASE_URL is invalid.' >&2; exit 64; }
+  export PGHOST="${migration_connection[0]}" PGPORT="${migration_connection[1]}"
+  export PGUSER="${migration_connection[2]}" PGPASSWORD="${migration_connection[3]}"
+  export PGSSLMODE="${migration_connection[5]}"
+  [[ -z "${migration_connection[6]}" ]] || export PGSSLROOTCERT="${migration_connection[6]}"
+  migration_database="${migration_connection[4]}"
+  unset migration_connection
+fi
 if [[ -n "${PGHOST:-}" ]]; then
   command -v psql >/dev/null || { echo 'psql is required for external PostgreSQL.' >&2; exit 69; }
   psql_command=(psql -X -v ON_ERROR_STOP=1 -d "$migration_database")

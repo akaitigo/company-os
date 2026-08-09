@@ -60,6 +60,8 @@ flowchart LR
 | THR-IAM-001 | realm importの再実行や破壊的同期でuser、credential、role assignment、sessionを損失 | 全社login不能、権限破壊 | additive reconciliation、managed field限定、未知resource保持 | plan/audit、upgrade前backup | 既存realm preservation test |
 | THR-IAM-002 | 並行reconciliationまたは途中失敗でIAM設定が不整合 | login不能、claim/権限欠落 | mutation前のrealm lease、冪等操作、forward-fix | convergence plan、lease cleanup | lock/interruption/retry test |
 | THR-IAM-003 | admin credentialが引数、log、artifactへ漏洩 | IdP全権侵害 | secret env/file、出力redaction、専用admin client | credential rotation、audit review | wrong-secret/secret-absence test |
+| THR-CFG-001 | placeholder、平文transport、同一DB role、改変artifactのままproduction deploy | credential漏洩、migration権限奪取、supply-chain侵害 | versioned contract、SMB HTTPS/DB verify-full、runtime/owner分離、artifact checksum | read-only preflightのredacted JSONをchange evidenceへ保存 | offline/connected/privilege/TLS/tamper tests |
+| THR-CFG-002 | preflightが秘密値を出力または検査中に外部状態を変更 | credential漏洩、予期しない本番変更 | 固定check ID/codeのみ出力、validateはoffline、checkはread-only、5秒timeout | seeded secret scan、DB/IAM state比較 | redaction/offline/timeout tests |
 | THR-DOS-001 | unbounded report/export/rule evaluation | availability/cost | NFR limits、async quotas、cancellation | saturation metrics | load/limit test |
 
 ## Abuse cases

@@ -1,0 +1,282 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+temp_dir="$(mktemp -d)"
+postgres_container="company-os-preflight-postgres-${$}"
+listener_pid='' https_pid='' hanging_pid=''
+db_port=$((55000 + ($$ % 500)))
+https_port=$((56000 + ($$ % 500)))
+cleanup() {
+  [[ -z "$listener_pid" ]] || kill "$listener_pid" >/dev/null 2>&1 || true
+  [[ -z "$https_pid" ]] || kill "$https_pid" >/dev/null 2>&1 || true
+  [[ -z "$hanging_pid" ]] || kill "$hanging_pid" >/dev/null 2>&1 || true
+  docker rm -f "$postgres_container" >/dev/null 2>&1 || true
+  rm -rf "$temp_dir"
+}
+trap cleanup EXIT
+
+[[ -f dist/web/ARTIFACT.sha256 ]] || pnpm --filter @company-os/web build >/dev/null
+./scripts/check-deployment-contract >/dev/null
+
+dev_env=(
+  DEPLOYMENT_PROFILE=DEV
+  DATABASE_URL=postgresql://company_os:local-development-only@127.0.0.1:5432/company_os
+  OIDC_ISSUER=http://localhost:8080/realms/company-os
+  OIDC_AUDIENCE=company-os-api
+  OIDC_CLIENT_ID=company-os-web
+  OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
+  SESSION_SECRET=dev-preflight-session-secret-at-least-32-characters
+  API_INTERNAL_URL=http://127.0.0.1:3001
+  OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+  WEB_ARTIFACT_DIR="$repo_dir/dist/web"
+)
+
+# validate is provably offline: all endpoints point to a listening sentinel and
+# no accepted connection may create the marker.
+sentinel_port=$((57000 + ($$ % 500)))
+PREFLIGHT_SENTINEL_MARKER="$temp_dir/network-used" PREFLIGHT_SENTINEL_PORT="$sentinel_port" \
+  node -e '
+    const fs=require("node:fs"), net=require("node:net");
+    net.createServer(socket => { fs.writeFileSync(process.env.PREFLIGHT_SENTINEL_MARKER,"used"); socket.destroy(); })
+      .listen(Number(process.env.PREFLIGHT_SENTINEL_PORT),"127.0.0.1");
+  ' &
+listener_pid=$!
+offline_output="$temp_dir/offline.json"
+env "${dev_env[@]}" \
+  DATABASE_URL="postgresql://user:password@127.0.0.1:$sentinel_port/database" \
+  OIDC_ISSUER="http://127.0.0.1:$sentinel_port/realms/company-os" \
+  OTEL_EXPORTER_OTLP_ENDPOINT="http://127.0.0.1:$sentinel_port" \
+  ./scripts/preflight validate > "$offline_output"
+[[ "$(jq -r .status "$offline_output")" == pass && ! -e "$temp_dir/network-used" ]]
+kill "$listener_pid" >/dev/null 2>&1 || true
+wait "$listener_pid" 2>/dev/null || true
+listener_pid=''
+
+docker compose up -d postgres keycloak otel-collector >/dev/null
+curl --fail --silent --retry 30 --retry-all-errors --retry-delay 1 --max-time 2 \
+  http://127.0.0.1:8080/realms/company-os/.well-known/openid-configuration >/dev/null
+env "${dev_env[@]}" ./scripts/preflight check > "$temp_dir/dev.json"
+[[ "$(jq -r .status "$temp_dir/dev.json")" == pass ]]
+
+# Production-like TLS PostgreSQL with distinct least-privilege runtime and owner roles.
+mkdir -p "$temp_dir/postgres-cert"
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
+  -keyout "$temp_dir/postgres-cert/server.key" \
+  -out "$temp_dir/postgres-cert/server.crt" >/dev/null 2>&1
+docker run --rm --volume "$temp_dir/postgres-cert:/cert" \
+  --entrypoint chown postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
+  70:70 /cert/server.key /cert/server.crt
+docker run --detach --name "$postgres_container" --publish "127.0.0.1:$db_port:5432" \
+  --env POSTGRES_DB=preflight --env POSTGRES_USER=bootstrap --env POSTGRES_PASSWORD=bootstrap-test-only \
+  --volume "$temp_dir/postgres-cert:/cert:ro" \
+  postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
+  -c ssl=on -c ssl_cert_file=/cert/server.crt -c ssl_key_file=/cert/server.key >/dev/null
+for _ in $(seq 1 30); do
+  docker exec "$postgres_container" pg_isready -U bootstrap -d preflight >/dev/null 2>&1 && break
+  sleep 1
+done
+if ! docker exec "$postgres_container" pg_isready -U bootstrap -d preflight >/dev/null 2>&1; then
+  docker logs "$postgres_container" >&2
+  echo 'TLS PostgreSQL fixture did not become ready.' >&2
+  exit 1
+fi
+docker exec -i "$postgres_container" psql -v ON_ERROR_STOP=1 -U bootstrap -d preflight >/dev/null <<'SQL'
+CREATE ROLE company_os_app NOLOGIN;
+CREATE ROLE runtime_user LOGIN PASSWORD 'runtime-password-long-and-random' NOSUPERUSER NOBYPASSRLS;
+CREATE ROLE runtime_power LOGIN PASSWORD 'power-password-long-and-random' CREATEDB NOSUPERUSER NOBYPASSRLS;
+CREATE ROLE migration_owner LOGIN PASSWORD 'migration-password-long-and-random' NOSUPERUSER NOBYPASSRLS;
+CREATE ROLE migration_impostor LOGIN PASSWORD 'impostor-password-long-and-random' NOSUPERUSER NOBYPASSRLS;
+GRANT company_os_app TO runtime_user;
+GRANT company_os_app TO runtime_power;
+GRANT CONNECT ON DATABASE preflight TO runtime_user, migration_owner, migration_impostor;
+GRANT CREATE ON DATABASE preflight TO migration_owner, migration_impostor;
+CREATE SCHEMA migration AUTHORIZATION migration_owner;
+CREATE TABLE migration.schema_migrations(version text PRIMARY KEY);
+ALTER TABLE migration.schema_migrations OWNER TO migration_owner;
+REVOKE ALL ON SCHEMA migration FROM PUBLIC;
+REVOKE ALL ON migration.schema_migrations FROM PUBLIC;
+CREATE DATABASE preflight_migrate OWNER migration_owner;
+SQL
+
+openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
+  -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
+  -keyout "$temp_dir/https.key" -out "$temp_dir/https.crt" >/dev/null 2>&1
+PREFLIGHT_HTTPS_PORT="$https_port" PREFLIGHT_HTTPS_KEY="$temp_dir/https.key" \
+  PREFLIGHT_HTTPS_CERT="$temp_dir/https.crt" node -e '
+    const fs=require("node:fs"), https=require("node:https");
+    const port=Number(process.env.PREFLIGHT_HTTPS_PORT);
+    const issuer=`https://localhost:${port}/realms/company-os`;
+    https.createServer({key:fs.readFileSync(process.env.PREFLIGHT_HTTPS_KEY),cert:fs.readFileSync(process.env.PREFLIGHT_HTTPS_CERT)},(req,res)=>{
+      res.setHeader("content-type","application/json");
+      res.end(JSON.stringify({issuer,authorization_endpoint:`${issuer}/auth`,token_endpoint:`${issuer}/token`,jwks_uri:`${issuer}/certs`}));
+    }).listen(port,"127.0.0.1");
+  ' &
+https_pid=$!
+
+root_cert="$(realpath "$temp_dir/postgres-cert/server.crt")"
+smb_runtime="postgresql://runtime_user:runtime-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
+smb_power="postgresql://runtime_power:power-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
+smb_owner="postgresql://migration_owner:migration-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
+smb_impostor="postgresql://migration_impostor:impostor-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
+smb_secret='smb-session-secret-that-is-at-least-thirty-two-characters'
+smb_signing='smb-backup-signing-key-at-least-thirty-two-characters'
+smb_env=(
+  DEPLOYMENT_PROFILE=SMB DATABASE_URL="$smb_runtime" MIGRATION_DATABASE_URL="$smb_owner"
+  OIDC_ISSUER="https://localhost:$https_port/realms/company-os"
+  OIDC_AUDIENCE=company-os-api OIDC_CLIENT_ID=company-os-web
+  OIDC_REDIRECT_URI="https://localhost:$https_port/auth/callback"
+  SESSION_SECRET="$smb_secret" MIGRATION_BACKUP_SIGNING_KEY="$smb_signing"
+  API_INTERNAL_URL=http://api.internal:3001
+  OTEL_EXPORTER_OTLP_ENDPOINT="https://localhost:$https_port"
+  WEB_ARTIFACT_DIR="$repo_dir/dist/web" NODE_EXTRA_CA_CERTS="$temp_dir/https.crt"
+)
+PGHOST=127.0.0.1 PGPORT="$db_port" PGDATABASE=preflight PGUSER=runtime_user \
+PGPASSWORD=runtime-password-long-and-random PGSSLMODE=verify-full PGSSLROOTCERT="$root_cert" \
+  psql -X -v ON_ERROR_STOP=1 -At -c 'SELECT current_user' | grep -Fxq runtime_user
+for _ in $(seq 1 30); do
+  curl --insecure --fail --silent --max-time 1 "https://localhost:$https_port/realms/company-os/.well-known/openid-configuration" >/dev/null && break
+  sleep 1
+done
+if ! env "${smb_env[@]}" ./scripts/preflight check > "$temp_dir/smb.json"; then
+  jq '{status,failed:[.checks[]|select(.status=="fail")]}' "$temp_dir/smb.json" >&2
+  exit 1
+fi
+[[ "$(jq -r .status "$temp_dir/smb.json")" == pass ]]
+for secret_fragment in "$smb_secret" "$smb_signing" runtime-password migration-password; do
+  ! grep -Fq "$secret_fragment" "$temp_dir/smb.json"
+done
+
+migration_runner_url="postgresql://migration_owner:migration-password-long-and-random@127.0.0.1:$db_port/preflight_migrate?sslmode=verify-full&sslrootcert=$root_cert"
+MIGRATION_DATABASE_URL="$migration_runner_url" ./scripts/migrate status | grep -Fxq 'migration_state=clean'
+
+# A reachable database with excessive runtime privileges must fail closed while
+# later independent checks still produce evidence.
+bootstrap_url="postgresql://bootstrap:bootstrap-test-only@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
+if env "${smb_env[@]}" DATABASE_URL="$bootstrap_url" ./scripts/preflight check > "$temp_dir/excessive-db.json"; then
+  echo 'Preflight accepted a superuser runtime connection.' >&2
+  exit 1
+fi
+jq -e '
+  any(.checks[]; .id=="database.runtime-privileges" and .status=="fail" and .code=="excess-or-missing") and
+  ([.checks[] | select(.id=="identity.discovery" or .id=="telemetry.connectivity" or .id=="artifact.web-integrity") | .status] == ["pass","pass","pass"])
+' "$temp_dir/excessive-db.json" >/dev/null
+
+if env "${smb_env[@]}" DATABASE_URL="$smb_power" ./scripts/preflight check > "$temp_dir/power-db.json"; then
+  echo 'Preflight accepted a CREATEDB runtime role.' >&2
+  exit 1
+fi
+jq -e 'any(.checks[]; .id=="database.runtime-privileges" and .status=="fail" and .code=="excess-or-missing")' \
+  "$temp_dir/power-db.json" >/dev/null
+
+if env "${smb_env[@]}" MIGRATION_DATABASE_URL="$smb_impostor" \
+  ./scripts/preflight check > "$temp_dir/impostor-owner.json"; then
+  echo 'Preflight accepted a migration role that does not own its schema and ledger.' >&2
+  exit 1
+fi
+jq -e 'any(.checks[]; .id=="database.owner-privileges" and .status=="fail" and .code=="excess-or-missing")' \
+  "$temp_dir/impostor-owner.json" >/dev/null
+
+# An unrelated configuration failure must not hide independent connected checks.
+if env "${smb_env[@]}" SESSION_SECRET=short ./scripts/preflight check > "$temp_dir/collect-all.json"; then
+  echo 'Preflight accepted an invalid secret during connected checks.' >&2
+  exit 1
+fi
+jq -e '
+  any(.checks[]; .id=="config.SESSION_SECRET" and .status=="fail") and
+  ([.checks[] | select(.id=="database.runtime-privileges" or .id=="database.owner-privileges" or .id=="identity.discovery" or .id=="telemetry.connectivity" or .id=="artifact.web-integrity") | .status] == ["pass","pass","pass","pass","pass"])
+' "$temp_dir/collect-all.json" >/dev/null
+
+# Artifact validation is part of connected preflight, not only the standalone verifier.
+mkdir -p "$temp_dir/broken-artifact"
+if env "${dev_env[@]}" WEB_ARTIFACT_DIR="$temp_dir/broken-artifact" \
+  ./scripts/preflight check > "$temp_dir/broken-artifact.json"; then
+  echo 'Preflight accepted a missing web artifact manifest.' >&2
+  exit 1
+fi
+jq -e 'any(.checks[]; .id=="artifact.web-integrity" and .status=="fail" and .code=="invalid")' \
+  "$temp_dir/broken-artifact.json" >/dev/null
+
+# A server that accepts TCP but never responds proves the OIDC request timeout.
+hanging_port=$((58000 + ($$ % 500)))
+PREFLIGHT_HANGING_PORT="$hanging_port" node -e '
+  const net=require("node:net");
+  net.createServer(() => {}).listen(Number(process.env.PREFLIGHT_HANGING_PORT), "127.0.0.1");
+' &
+hanging_pid=$!
+for _ in $(seq 1 30); do
+  if PREFLIGHT_HANGING_PORT="$hanging_port" node -e '
+    const net=require("node:net"), port=Number(process.env.PREFLIGHT_HANGING_PORT);
+    const socket=net.connect({host:"127.0.0.1",port},()=>{socket.destroy();process.exit(0)});
+    socket.on("error",()=>process.exit(1));
+  '; then
+    break
+  fi
+  sleep 0.1
+done
+started_at=$(date +%s)
+if env "${dev_env[@]}" OIDC_ISSUER="http://127.0.0.1:$hanging_port/realms/company-os" \
+  ./scripts/preflight check > "$temp_dir/timeout.json"; then
+  echo 'Preflight accepted an OIDC discovery timeout.' >&2
+  exit 1
+fi
+elapsed=$(( $(date +%s) - started_at ))
+[[ "$elapsed" -le 8 ]]
+jq -e 'any(.checks[]; .id=="identity.discovery" and .status=="fail" and .code=="unreachable")' \
+  "$temp_dir/timeout.json" >/dev/null
+kill "$hanging_pid" >/dev/null 2>&1 || true
+wait "$hanging_pid" 2>/dev/null || true
+hanging_pid=''
+
+expect_failure() {
+  local name="$1" expected="$2"; shift 2
+  if env "${smb_env[@]}" "$@" ./scripts/preflight validate > "$temp_dir/$name.json"; then
+    echo "Preflight unexpectedly accepted $name." >&2
+    exit 1
+  fi
+  jq -e --arg id "$expected" 'any(.checks[]; .id==$id and .status=="fail")' "$temp_dir/$name.json" >/dev/null
+  for secret_fragment in "$smb_secret" "$smb_signing" runtime-password migration-password; do
+    ! grep -Fq "$secret_fragment" "$temp_dir/$name.json"
+  done
+}
+expect_failure short-secret config.SESSION_SECRET SESSION_SECRET=short
+expect_failure placeholder config.SESSION_SECRET SESSION_SECRET=replace-with-generated-secret-value
+expect_failure insecure-issuer config.OIDC_ISSUER OIDC_ISSUER=http://idp.example.com/realms/company-os
+expect_failure insecure-telemetry config.OTEL_EXPORTER_OTLP_ENDPOINT OTEL_EXPORTER_OTLP_ENDPOINT=http://otel.example.com:4318
+expect_failure bad-redirect config.OIDC_REDIRECT_URI OIDC_REDIRECT_URI=https://company.example.com/wrong
+expect_failure db-tls database.runtime-tls DATABASE_URL='postgresql://runtime:strong-password@db.example.com/company?sslmode=require'
+expect_failure db-protocol config.DATABASE_URL DATABASE_URL='https://db.example.com/company?sslmode=verify-full'
+expect_failure same-role database.role-separation MIGRATION_DATABASE_URL="$smb_runtime"
+
+printf '{}\n' > "$temp_dir/invalid-contract.json"
+if env "${dev_env[@]}" PREFLIGHT_CONTRACT="$temp_dir/invalid-contract.json" ./scripts/preflight validate > "$temp_dir/contract.json"; then
+  echo 'Preflight accepted an invalid contract.' >&2
+  exit 1
+fi
+jq -e 'any(.checks[]; .id=="contract.schema" and .status=="fail")' "$temp_dir/contract.json" >/dev/null
+
+jq '(.fields[] | select(.name == "SESSION_SECRET") | .secret) = false' \
+  infra/config/deployment-contract-v1.json > "$temp_dir/weakened-contract.json"
+if env "${dev_env[@]}" PREFLIGHT_CONTRACT="$temp_dir/weakened-contract.json" \
+  ./scripts/preflight validate > "$temp_dir/weakened.json"; then
+  echo 'Preflight accepted a weakened secret classification.' >&2
+  exit 1
+fi
+jq -e 'any(.checks[]; .id=="contract.schema" and .status=="fail" and .code=="invalid")' \
+  "$temp_dir/weakened.json" >/dev/null
+
+jq '(.fields[] | select(.name == "DATABASE_URL") | .requiredIn) = "SMB"' \
+  infra/config/deployment-contract-v1.json > "$temp_dir/malformed-contract.json"
+if env "${dev_env[@]}" PREFLIGHT_CONTRACT="$temp_dir/malformed-contract.json" \
+  ./scripts/preflight validate > "$temp_dir/malformed.json"; then
+  echo 'Preflight accepted a malformed requiredIn field.' >&2
+  exit 1
+fi
+jq -e '
+  .status == "fail" and
+  any(.checks[]; .id=="contract.schema" and .status=="fail" and .code=="invalid")
+' "$temp_dir/malformed.json" >/dev/null
+
+echo 'Preflight tests passed: contract, offline, DEV, SMB TLS/roles, timeout, artifact, redaction, negative configuration and privileges.'

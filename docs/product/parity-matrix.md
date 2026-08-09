@@ -29,7 +29,7 @@
 | PAR-FIN-005 | Finance | Reconciliation/close | Mandatory | not_started | verified | checklist、lock、evidence packageなし |
 | PAR-FIN-006 | Finance | TB/GL/P&L/BS/cash/export | Mandatory | not_started | verified | 帳票・drill-downなし |
 | PAR-CMP-001 | Compliance | Requirement-rule-command-evidence-test trace | Mandatory | primitive | verified | runtime/UI/CIの連結不足 |
-| PAR-OPS-001 | Operations | Install/preflight/config/secrets/TLS | Mandatory | primitive | verified | production installerとvalidation不足 |
+| PAR-OPS-001 | Operations | Install/preflight/config/secrets/TLS | Mandatory | vertical_slice | verified | preflight/config/TLSは実装、production installerと実環境UAT不足 |
 | PAR-OPS-002 | Operations | Upgrade/rollback/backup/restore | Mandatory | vertical_slice | verified | version upgrade rehearsal、object/config/key不足 |
 | PAR-OPS-003 | Operations | Monitoring/alert/support bundle/capacity | Mandatory | primitive | operational | dashboard/alert/SLO/load evidence不足 |
 | PAR-MIG-001 | Migration | Source export/import/reconciliation/cutover | Mandatory | not_started | verified | migration product未実装 |
