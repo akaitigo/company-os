@@ -13,7 +13,7 @@
 | PAR-PLT-005 | Platform | Audit/evidence/search/export | Mandatory | vertical_slice | verified | authorized search/export、before/after、運用不足 |
 | PAR-PLT-006 | Platform | Notification/retry/dead-letter/reconcile | Mandatory | primitive | operational | adapter、admin UI、alert、replay不足 |
 | PAR-WKF-001 | Workforce | Employee/employment/assignment lifecycle | Mandatory | primitive | verified | 業務UI、履歴、JML、import/export不足 |
-| PAR-WKF-002 | Workforce | Clock/break/shift/calendar | Mandatory | primitive | verified | 固定9時間demoのみ |
+| PAR-WKF-002 | Workforce | Clock/break/shift/calendar | Mandatory | vertical_slice | verified | 任意時刻・複数休憩・履歴・訂正を実装。shift/calendarは未実装 |
 | PAR-WKF-003 | Workforce | Working-time calculation/explanation | Mandatory | not_started | verified | overtime/night/holiday/rule説明なし |
 | PAR-WKF-004 | Workforce | Correction/approval/close/reopen | Mandatory | not_started | verified | workflowとperiod controlなし |
 | PAR-WKF-005 | Workforce | Leave accrual/request/approval/balance | Mandatory | primitive | verified | UI、accrual/expiry、approval/取消不足 |
@@ -33,4 +33,3 @@
 | PAR-OPS-002 | Operations | Upgrade/rollback/backup/restore | Mandatory | vertical_slice | verified | version upgrade rehearsal、object/config/key不足 |
 | PAR-OPS-003 | Operations | Monitoring/alert/support bundle/capacity | Mandatory | primitive | operational | dashboard/alert/SLO/load evidence不足 |
 | PAR-MIG-001 | Migration | Source export/import/reconciliation/cutover | Mandatory | not_started | verified | migration product未実装 |
-

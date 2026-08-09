@@ -74,6 +74,9 @@ importers:
       '@company-os/organization':
         specifier: workspace:*
         version: link:../../modules/organization
+      '@company-os/workforce':
+        specifier: workspace:*
+        version: link:../../modules/workforce
       '@fastify/helmet':
         specifier: 13.1.0
         version: 13.1.0

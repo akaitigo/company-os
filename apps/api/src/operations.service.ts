@@ -5,12 +5,14 @@ import type {
   AllocateCostInput,
   ApplyReceiptInput,
   CreateRequisitionInput,
+  ListAttendanceQuery,
   PostJournalInput,
   RecordAttendanceInput,
   RequestLeaveInput,
   RequestContext,
 } from '@company-os/contracts';
 import { entityId, tenantId } from '@company-os/kernel';
+import { AttendanceEntry } from '@company-os/workforce';
 import { Pool, type PoolClient } from 'pg';
 import { AccessDeniedError } from './organization.service.js';
 
@@ -31,11 +33,34 @@ export class OperationsService {
     context: RequestContext,
   ): Promise<CommandResult> {
     this.assertAuthorized('workforce.attendance.record', input.tenantId, context);
+    const entry = new AttendanceEntry({
+      workDate: input.workDate,
+      startedAt: input.startedAt,
+      endedAt: input.endedAt,
+      timeZone: input.timeZone,
+      breaks: input.breaks,
+    });
     return this.transaction(context, async (client) => {
+      await this.assertEmploymentAccess(client, context, input.employmentId);
+      if (input.correctedEntryId !== undefined) {
+        const correction = await client.query(
+          `SELECT 1 FROM workforce.attendance_entries original
+            WHERE original.tenant_id=$1 AND original.id=$2 AND original.employment_id=$3
+              AND NOT EXISTS (
+                SELECT 1 FROM workforce.attendance_entries replacement
+                 WHERE replacement.tenant_id=original.tenant_id
+                   AND replacement.corrected_entry_id=original.id
+              ) FOR UPDATE`,
+          [input.tenantId, input.correctedEntryId, input.employmentId],
+        );
+        if (correction.rowCount !== 1)
+          throw new OperationConflictError('Attendance correction target is unavailable');
+      }
       await client.query(
         `INSERT INTO workforce.attendance_entries
-          (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'submitted',$9)`,
+          (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,
+           recorded_by,corrected_entry_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'submitted',$9,$10)`,
         [
           input.tenantId,
           input.id,
@@ -43,11 +68,20 @@ export class OperationsService {
           input.workDate,
           input.startedAt,
           input.endedAt,
-          input.breakMinutes,
+          entry.breakMinutes,
           input.source,
           context.actorId,
+          input.correctedEntryId ?? null,
         ],
       );
+      for (const item of input.breaks) {
+        await client.query(
+          `INSERT INTO workforce.attendance_breaks
+            (tenant_id,attendance_entry_id,id,started_at,ended_at)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [input.tenantId, input.id, item.id, item.startedAt, item.endedAt],
+        );
+      }
       await this.recordEvidence(
         client,
         context,
@@ -56,9 +90,43 @@ export class OperationsService {
         input.id,
         {
           workDate: input.workDate,
+          workedMinutes: entry.workedMinutes,
+          breakCount: input.breaks.length,
+          correctedEntryId: input.correctedEntryId,
         },
       );
       return { id: input.id, version: 1 };
+    });
+  }
+
+  async listAttendance(
+    query: ListAttendanceQuery,
+    context: RequestContext,
+  ): Promise<readonly Record<string, unknown>[]> {
+    this.assertAuthorized('workforce.attendance.read', context.tenantId, context);
+    return this.transaction(context, async (client) => {
+      await this.assertEmploymentAccess(client, context, query.employmentId);
+      const result = await client.query(
+        `SELECT entry.id,entry.work_date AS "workDate",entry.started_at AS "startedAt",
+                entry.ended_at AS "endedAt",entry.break_minutes AS "breakMinutes",
+                (extract(epoch FROM (entry.ended_at-entry.started_at))/60-entry.break_minutes)::integer
+                  AS "workedMinutes",
+                entry.source,entry.status,entry.corrected_entry_id AS "correctedEntryId",
+                replacement.id AS "supersededById",
+                coalesce(jsonb_agg(jsonb_build_object(
+                  'id',br.id,'startedAt',br.started_at,'endedAt',br.ended_at)
+                  ORDER BY br.started_at) FILTER (WHERE br.id IS NOT NULL),'[]'::jsonb) AS breaks
+           FROM workforce.attendance_entries entry
+           LEFT JOIN workforce.attendance_breaks br
+             ON br.tenant_id=entry.tenant_id AND br.attendance_entry_id=entry.id
+           LEFT JOIN workforce.attendance_entries replacement
+             ON replacement.tenant_id=entry.tenant_id AND replacement.corrected_entry_id=entry.id
+          WHERE entry.tenant_id=$1 AND entry.employment_id=$2
+          GROUP BY entry.tenant_id,entry.id,replacement.id
+          ORDER BY entry.work_date DESC,entry.started_at DESC,entry.id DESC LIMIT $3`,
+        [context.tenantId, query.employmentId, query.limit],
+      );
+      return result.rows as readonly Record<string, unknown>[];
     });
   }
 
@@ -317,6 +385,19 @@ export class OperationsService {
       resourceTenantId: tenantId(resourceTenantId),
     });
     if (decision !== 'allow') throw new AccessDeniedError('Authorization denied');
+  }
+
+  private async assertEmploymentAccess(
+    client: PoolClient,
+    context: RequestContext,
+    employmentId: string,
+  ): Promise<void> {
+    const result = await client.query(
+      `SELECT 1 FROM workforce.employment_access
+        WHERE tenant_id=$1 AND actor_id=$2 AND employment_id=$3 AND revoked_at IS NULL`,
+      [context.tenantId, context.actorId, employmentId],
+    );
+    if (result.rowCount !== 1) throw new AccessDeniedError('Employment access denied');
   }
 
   private async transaction<T>(

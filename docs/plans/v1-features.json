@@ -11,7 +11,7 @@
     { "id": "V1-PLT-006", "name": "OIDC login and JWKS failure handling", "status": "vertical_slice", "evidence": "tests/unit/identity.test.ts" },
     { "id": "V1-PLT-007", "name": "Workflow, documents, rules and retention", "status": "primitive", "evidence": "modules/compliance/src/index.ts" },
     { "id": "V1-WKF-001", "name": "Worker lifecycle and employment", "status": "primitive", "evidence": "tests/unit/workforce.test.ts" },
-    { "id": "V1-WKF-002", "name": "Attendance, leave and approval", "status": "primitive", "evidence": "apps/web/src/app/operations-forms.tsx" },
+    { "id": "V1-WKF-002", "name": "Attendance, leave and approval", "status": "vertical_slice", "evidence": "apps/web/src/app/attendance-form.tsx" },
     { "id": "V1-STP-001", "name": "Supplier and requisition-to-purchase-order", "status": "primitive", "evidence": "tests/unit/source-to-pay.test.ts" },
     { "id": "V1-STP-002", "name": "Receipt, expense, AP and payment control", "status": "primitive", "evidence": "infra/postgres/migrations/0004_v1_scope_completion.sql" },
     { "id": "V1-FIN-001", "name": "General ledger and balanced posting", "status": "vertical_slice", "evidence": "apps/api/src/operations.service.ts" },

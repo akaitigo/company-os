@@ -13,6 +13,17 @@ VALUES
   ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000003',
    '10000000-0000-4000-8000-000000000002','10000000-0000-4000-8000-000000000001','2026-04-01',2400,'active')
 ON CONFLICT DO NOTHING;
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000012',
+        'person','Access Boundary Test User')
+ON CONFLICT DO NOTHING;
+INSERT INTO workforce.employments
+  (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+VALUES
+  ('11111111-1111-4111-8111-111111111111','10000000-0000-4000-8000-000000000013',
+   '10000000-0000-4000-8000-000000000012','10000000-0000-4000-8000-000000000001',
+   '2026-04-01',2400,'active')
+ON CONFLICT DO NOTHING;
 INSERT INTO workforce.leave_ledger
   (tenant_id,id,employment_id,occurred_at,entry_type,minutes,reference_id)
 VALUES

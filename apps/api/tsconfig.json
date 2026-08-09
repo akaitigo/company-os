@@ -14,7 +14,8 @@
     { "path": "../../modules/authorization" },
     { "path": "../../modules/audit" },
     { "path": "../../modules/integration" },
-    { "path": "../../modules/identity" }
+    { "path": "../../modules/identity" },
+    { "path": "../../modules/workforce" }
   ],
   "include": ["src/**/*.ts"]
 }
