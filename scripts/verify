@@ -14,5 +14,6 @@ pnpm build
 docker compose config --quiet
 ./scripts/check-migrations
 ./scripts/check-keycloak-config
+./scripts/check-deployment-contract
 ./scripts/test-web-artifact
 git diff --check

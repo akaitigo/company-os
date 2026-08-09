@@ -37,6 +37,8 @@ pnpm exec playwright install chromium
 
 Webのproduction buildは検証用checksumを含む`dist/web`を生成します。ローカルとVMは必要なruntime環境変数を注入して`./scripts/start-web`、containerは`infra/containers/web.Dockerfile`を使用します。どちらも同じentrypointとstandalone artifactを起動し、`next start`は使用しません。
 
+本番相当の設定は`infra/config/deployment-contract-v1.json`を正本とします。ネットワークへ接続しない`./scripts/preflight validate`で設定を検査し、変更適用前にread-onlyの`./scripts/preflight check > preflight-evidence.json`でDB権限、OIDC discovery、telemetry、Node版、Web artifactを確認してください。SMB profileはruntime DBとmigration ownerを別credentialにし、両方でTLS `verify-full`を必須とします。詳細は[Operations](docs/OPERATIONS.md)を参照してください。
+
 ## Security and supply chain
 
 ```bash

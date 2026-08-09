@@ -12,14 +12,20 @@ containerは`docker build -f infra/containers/web.Dockerfile -t company-os-web:<
 
 ## Deploy
 
-1. owner接続で`./scripts/migrate status`を実行する。`untracked_existing`は一度だけ`adopt`し、`drift`・`running`・`failed`は解消するまでdeployを停止する。
-2. secret managerから32文字以上の`MIGRATION_BACKUP_SIGNING_KEY`を注入し、PostgreSQLと同版の`pg_dump`を使う`./scripts/backup`でbackup artifactとHMAC署名manifestを生成してrestore rehearsal成功を確認する。本番の`apply`/`adopt`/`recover`は署名、対象DB名、24時間以内の取得時刻、archive形式、artifact SHA-256が一致するmanifestだけを受理する。緊急時のみ`MIGRATION_ALLOW_WITHOUT_BACKUP=true`を外部変更記録付きで使う。
-3. `DEPLOYMENT_PROFILE=SMB MIGRATION_BACKUP_EVIDENCE=/secure/path/database.dump.manifest ./scripts/migrate apply`をowner roleで実行する。DEV Composeは`./scripts/migrate apply`、外部DB/VM/Kubernetes jobは`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`またはpassfile、`MIGRATION_DATABASE`を注入して同じcommandを使う。台帳導入前のN-1環境は、実際に導入済みのversionを`MIGRATION_ADOPT_THROUGH=0006 ./scripts/migrate adopt`のように明示してから`apply`する。
-4. Keycloak database backupとrestore rehearsalを確認し、secret managerから`KC_CLI_PASSWORD`（またはservice account用`KC_CLI_CLIENT_SECRET`）を注入する。`./scripts/reconcile-keycloak plan`のJSON Lines差分をreview後、`./scripts/reconcile-keycloak apply`を実行する。外部Keycloakでは`KEYCLOAK_KCADM`、`KEYCLOAK_URL`、`KEYCLOAK_ADMIN_REALM`を指定する。
-5. `migration_state=applied`、再度のKeycloak `plan`が全件`no-op`、application smoke testを確認する。
-6. immutable image digest、SBOM、security scan、CI結果をreleaseへ紐付ける。
-7. Webの`ARTIFACT.sha256`、container image digest、sizeをrelease evidenceへ記録する。registry上のdigestでdeployし、tagをrollback identityにしない。
-8. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
+設定の機械可読な正本は`infra/config/deployment-contract-v1.json`です。`DEPLOYMENT_PROFILE=SMB`では`DATABASE_URL`をapplication runtime、`MIGRATION_DATABASE_URL`をmigration owner専用にし、別user、`sslmode=verify-full`、信頼するCAを設定します。runtimeは`company_os_app`のmemberですがsuperuser/BYPASSRLSではなく、`migration` schemaへUSAGEを持ちません。ownerはdatabase CREATEとmigration ledgerを所有しますが`company_os_app`のmemberにはしません。秘密値はsecret managerまたは権限を限定したenvironment injectionで渡し、command line、image、JSON証跡へ保存しません。
+
+`./scripts/preflight validate`は完全にofflineでrequired field、placeholder、URL/TLS、role分離、Node版を検査します。`./scripts/preflight check`はさらにDB権限、OIDC discoveryのexact issuer/HTTPS endpoint、telemetry TCP、Web artifact checksumを各5秒timeoutでread-only検査します。標準出力は固定check ID/codeだけのredacted JSONです。release/change recordには`contractVersion`とJSON証跡を保存し、終了statusが非zeroならdeployを停止します。preflightはgrant、migration、realm同期、secret rotationを実行しません。
+
+1. release artifactと同じrevisionで`./scripts/preflight validate`を実行し、設定不備を修正する。
+2. owner接続で`./scripts/migrate status`を実行する。`untracked_existing`は一度だけ`adopt`し、`drift`・`running`・`failed`は解消するまでdeployを停止する。
+3. secret managerから32文字以上の`MIGRATION_BACKUP_SIGNING_KEY`を注入し、PostgreSQLと同版の`pg_dump`を使う`./scripts/backup`でbackup artifactとHMAC署名manifestを生成してrestore rehearsal成功を確認する。本番の`apply`/`adopt`/`recover`は署名、対象DB名、24時間以内の取得時刻、archive形式、artifact SHA-256が一致するmanifestだけを受理する。緊急時のみ`MIGRATION_ALLOW_WITHOUT_BACKUP=true`を外部変更記録付きで使う。
+4. `DEPLOYMENT_PROFILE=SMB MIGRATION_DATABASE_URL="$MIGRATION_DATABASE_URL" MIGRATION_BACKUP_EVIDENCE=/secure/path/database.dump.manifest ./scripts/migrate apply`をowner roleで実行する。外部DB/VM/Kubernetes jobではpreflightと同じ`MIGRATION_DATABASE_URL`をsecret injectionし、URL queryの`sslmode=verify-full`と`sslrootcert`を維持する。DEV Composeおよび従来の運用では`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`またはpassfile、`MIGRATION_DATABASE`も利用できる。台帳導入前のN-1環境は、実際に導入済みのversionを`MIGRATION_ADOPT_THROUGH=0006 ./scripts/migrate adopt`のように明示してから`apply`する。
+5. Keycloak database backupとrestore rehearsalを確認し、secret managerから`KC_CLI_PASSWORD`（またはservice account用`KC_CLI_CLIENT_SECRET`）を注入する。`./scripts/reconcile-keycloak plan`のJSON Lines差分をreview後、`./scripts/reconcile-keycloak apply`を実行する。外部Keycloakでは`KEYCLOAK_KCADM`、`KEYCLOAK_URL`、`KEYCLOAK_ADMIN_REALM`を指定する。
+6. migrationとIAM reconciliation後に`./scripts/preflight check > preflight-evidence.json`を実行し、`status=pass`と全connected checkを確認する。
+7. `migration_state=applied`、再度のKeycloak `plan`が全件`no-op`、application smoke testを確認する。
+8. immutable image digest、SBOM、security scan、CI結果をreleaseへ紐付ける。
+9. Webの`ARTIFACT.sha256`、container image digest、sizeをrelease evidenceへ記録する。registry上のdigestでdeployし、tagをrollback identityにしない。
+10. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
 
 `status`はDBを書き換えません。runnerはDB単位のadvisory lock、SHA-256 ledger、各migrationのverify SQLで二重実行・改変・不完全適用を拒否します。`running`はprocess中断の可能性を示すため`./scripts/migrate recover`でschemaを検証し、成功時のみ`applied`、不一致時は`failed`にします。`apply`はfailed行そのものを再実行せず、より新しい未登録のforward-fixだけを適用できます（failedが残るため終了statusは非zero）。その後`recover`で元のverifyを再検証します。release済みSQLは編集せず、新しいforward migrationを追加して`checksums.sha256`を更新します。
 

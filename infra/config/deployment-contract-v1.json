@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "contractVersion": "2026-08-09.1",
+  "profiles": ["DEV", "SMB"],
+  "timeoutSeconds": 5,
+  "fields": [
+    {
+      "name": "DEPLOYMENT_PROFILE",
+      "owner": "operator",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "profile"
+    },
+    {
+      "name": "DATABASE_URL",
+      "owner": "runtime",
+      "secret": true,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "postgres-url"
+    },
+    {
+      "name": "MIGRATION_DATABASE_URL",
+      "owner": "migration-owner",
+      "secret": true,
+      "requiredIn": ["SMB"],
+      "kind": "postgres-url"
+    },
+    {
+      "name": "OIDC_ISSUER",
+      "owner": "identity-admin",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "issuer-url"
+    },
+    {
+      "name": "OIDC_AUDIENCE",
+      "owner": "identity-admin",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "identifier"
+    },
+    {
+      "name": "OIDC_CLIENT_ID",
+      "owner": "identity-admin",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "identifier"
+    },
+    {
+      "name": "OIDC_REDIRECT_URI",
+      "owner": "operator",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "redirect-url"
+    },
+    {
+      "name": "SESSION_SECRET",
+      "owner": "secret-manager",
+      "secret": true,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "secret",
+      "minLength": 32
+    },
+    {
+      "name": "MIGRATION_BACKUP_SIGNING_KEY",
+      "owner": "secret-manager",
+      "secret": true,
+      "requiredIn": ["SMB"],
+      "kind": "secret",
+      "minLength": 32
+    },
+    {
+      "name": "API_INTERNAL_URL",
+      "owner": "operator",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "internal-url"
+    },
+    {
+      "name": "OTEL_EXPORTER_OTLP_ENDPOINT",
+      "owner": "operator",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "telemetry-url"
+    },
+    {
+      "name": "WEB_ARTIFACT_DIR",
+      "owner": "release-manager",
+      "secret": false,
+      "requiredIn": ["DEV", "SMB"],
+      "kind": "artifact-directory"
+    },
+    {
+      "name": "S3_ENDPOINT",
+      "owner": "operator",
+      "secret": false,
+      "requiredIn": [],
+      "kind": "https-url"
+    },
+    {
+      "name": "S3_ACCESS_KEY",
+      "owner": "secret-manager",
+      "secret": true,
+      "requiredIn": [],
+      "kind": "secret",
+      "minLength": 16
+    },
+    {
+      "name": "S3_SECRET_KEY",
+      "owner": "secret-manager",
+      "secret": true,
+      "requiredIn": [],
+      "kind": "secret",
+      "minLength": 32
+    }
+  ]
+}

@@ -12,23 +12,7 @@ fail() { echo "Web startup refused: $1" >&2; exit 78; }
 [[ -d "$runtime_dir/.next/static" ]] || fail 'packaged static assets are missing.'
 [[ -d "$runtime_dir/public" ]] || fail 'packaged public assets are missing.'
 
-(
-  cd "$artifact_dir"
-  expected="$(tr -d '\n' < ARTIFACT.sha256)"
-  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || exit 1
-  [[ "$(sha256sum MANIFEST.sha256 | awk '{print $1}')" == "$expected" ]] || exit 1
-  sha256sum -c MANIFEST.sha256 >/dev/null || exit 1
-  manifest_files="$(wc -l < MANIFEST.sha256 | tr -d ' ')"
-  actual_files="$(find . -type f ! -name MANIFEST.sha256 ! -name ARTIFACT.sha256 | wc -l | tr -d ' ')"
-  [[ "$manifest_files" -eq "$actual_files" ]] || exit 1
-  manifest_links=0
-  while IFS=$'\t' read -r link target; do
-    [[ -L "$link" && "$(readlink "$link")" == "$target" ]] || exit 1
-    manifest_links=$((manifest_links + 1))
-  done < SYMLINKS.manifest
-  actual_links="$(find . -type l | wc -l | tr -d ' ')"
-  [[ "$manifest_links" -eq "$actual_links" ]] || exit 1
-) || fail 'artifact checksum verification failed.'
+WEB_ARTIFACT_DIR="$artifact_dir" "$repo_dir/scripts/verify-web-artifact" || fail 'artifact checksum verification failed.'
 
 [[ -n "${SESSION_SECRET:-}" && ${#SESSION_SECRET} -ge 32 ]] || fail 'SESSION_SECRET must contain at least 32 characters.'
 for variable in OIDC_ISSUER OIDC_CLIENT_ID OIDC_REDIRECT_URI API_INTERNAL_URL; do
