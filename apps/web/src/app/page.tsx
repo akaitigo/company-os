@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { UnitForm } from './unit-form';
 import { OperationsForms } from './operations-forms';
 import { AttendanceForm } from './attendance-form';
+import { WorkRuleForm } from './work-rule-form';
 import { sessionRoles } from '../lib/session';
 export default async function Home(): Promise<React.JSX.Element> {
   const authenticated = (await cookies()).has('company_os_session');
@@ -19,6 +20,7 @@ export default async function Home(): Promise<React.JSX.Element> {
             <a href="/auth/logout">ログアウト</a>
           </nav>
           <UnitForm />
+          {roles.includes('workforce-hr') ? <WorkRuleForm /> : null}
           <AttendanceForm
             canReview={roles.includes('workforce-manager') || roles.includes('workforce-hr')}
             canManagePeriods={roles.includes('workforce-hr')}

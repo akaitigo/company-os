@@ -1,17 +1,22 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Injectable, type OnApplicationShutdown } from '@nestjs/common';
 import { authorize } from '@company-os/authorization';
 import type {
   AllocateCostInput,
+  ActivateWorkingTimeEnforcementInput,
   ApplyReceiptInput,
+  AssignWorkRuleInput,
+  CreateWorkRuleInput,
   CreateRequisitionInput,
   DecideAttendanceInput,
   ListAttendancePeriodsQuery,
   ListAttendanceQuery,
+  ListWorkRulesQuery,
   PostJournalInput,
   RecordAttendanceInput,
   RequestLeaveInput,
   RequestContext,
+  SetEmploymentCalendarDayInput,
   TransitionAttendancePeriodInput,
 } from '@company-os/contracts';
 import { entityId, tenantId } from '@company-os/kernel';
@@ -19,6 +24,8 @@ import {
   AttendanceEntry,
   AttendancePeriodTransition,
   AttendanceReview,
+  classifyDailyWork,
+  type DailyWorkRule,
 } from '@company-os/workforce';
 import type { PoolClient } from 'pg';
 import { createDatabasePool } from './database-pool.js';
@@ -56,6 +63,113 @@ export class OperationsService implements OnApplicationShutdown {
     try {
       return await this.transaction(context, async (client) => {
         await this.assertEmploymentAccess(client, context, input.employmentId);
+        await client.query(
+          `SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2 || ':work-rule-assignment',0))`,
+          [input.tenantId, input.employmentId],
+        );
+        const ruleResult = await client.query(
+          `SELECT rule.id,rule.rule_code AS "ruleCode",rule.version,
+                  rule.time_zone AS "timeZone",
+                  rule.scheduled_start_minute AS "scheduledStartMinute",
+                  rule.scheduled_end_minute AS "scheduledEndMinute",
+                  rule.statutory_daily_minutes AS "statutoryDailyMinutes",
+                  rule.night_start_minute AS "nightStartMinute",
+                  rule.night_end_minute AS "nightEndMinute",
+                  rule.statutory_holiday_weekdays AS "statutoryHolidayWeekdays",
+                  rule.requirement_id AS "requirementId",
+                  rule.expert_review_status AS "expertReviewStatus"
+             FROM workforce.employment_work_rule_assignments assignment
+             JOIN workforce.work_rule_versions rule
+               ON rule.tenant_id=assignment.tenant_id AND rule.id=assignment.work_rule_version_id
+            WHERE assignment.tenant_id=$1 AND assignment.employment_id=$2
+              AND assignment.effective_from <= $3::date
+              AND (assignment.effective_to IS NULL OR assignment.effective_to > $3::date)
+              AND rule.effective_from <= $3::date
+              AND (rule.effective_to IS NULL OR rule.effective_to > $3::date)
+              AND rule.expert_review_status='approved'`,
+          [input.tenantId, input.employmentId, input.workDate],
+        );
+        if (ruleResult.rowCount !== 1) {
+          const enforcement = await client.query(
+            `SELECT 1 FROM workforce.working_time_enforcement WHERE tenant_id=$1`,
+            [input.tenantId],
+          );
+          if (enforcement.rowCount === 1)
+            throw new OperationConflictError('WORK_RULE_UNDETERMINED');
+        }
+        const resolved = ruleResult.rows[0] as
+          | (DailyWorkRule & {
+              readonly id: string;
+              readonly version: number;
+              readonly statutoryHolidayWeekdays: readonly number[];
+            })
+          | undefined;
+        const rule: DailyWorkRule | undefined =
+          resolved === undefined
+            ? undefined
+            : {
+                ruleVersionId: resolved.id,
+                ruleCode: resolved.ruleCode,
+                ruleVersion: resolved.version,
+                timeZone: resolved.timeZone,
+                scheduledStartMinute: resolved.scheduledStartMinute,
+                scheduledEndMinute: resolved.scheduledEndMinute,
+                statutoryDailyMinutes: resolved.statutoryDailyMinutes,
+                nightStartMinute: resolved.nightStartMinute,
+                nightEndMinute: resolved.nightEndMinute,
+                requirementId: resolved.requirementId,
+                expertReviewStatus: resolved.expertReviewStatus,
+              };
+        const dates: string[] = [];
+        const finalLocalDate = new Intl.DateTimeFormat('en-CA', {
+          timeZone: input.timeZone,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date(Date.parse(input.endedAt) - 1));
+        for (let date = input.workDate; date <= finalLocalDate; date = this.nextDate(date))
+          dates.push(date);
+        if (rule !== undefined)
+          await client.query(
+            `SELECT pg_advisory_xact_lock(hashtextextended($1 || ':' || $2 || ':' || day::text,0))
+             FROM unnest($3::date[]) AS day ORDER BY day`,
+            [input.tenantId, input.employmentId, dates],
+          );
+        const calendarResult =
+          rule === undefined
+            ? { rows: [] }
+            : await client.query(
+                `SELECT DISTINCT ON (work_date) to_char(work_date,'YYYY-MM-DD') AS "workDate",
+                  day_type AS "dayType"
+             FROM workforce.employment_calendar_days
+            WHERE tenant_id=$1 AND employment_id=$2 AND work_date=ANY($3::date[])
+            ORDER BY work_date,sequence DESC`,
+                [input.tenantId, input.employmentId, dates],
+              );
+        const overrides = new Map<string, string>(
+          calendarResult.rows.map((row: { workDate: string; dayType: string }) => [
+            row.workDate,
+            row.dayType,
+          ]),
+        );
+        const holidays = new Set(
+          dates.filter((date) => {
+            const override = overrides.get(date);
+            if (override !== undefined) return override === 'statutory_holiday';
+            return (
+              resolved?.statutoryHolidayWeekdays.includes(
+                new Date(`${date}T00:00:00Z`).getUTCDay(),
+              ) === true
+            );
+          }),
+        );
+        const nonWorkingDates = new Set(
+          dates.filter((date) => overrides.get(date) === 'non_working'),
+        );
+        const classification =
+          rule === undefined
+            ? undefined
+            : classifyDailyWork(entry, rule, holidays, nonWorkingDates);
         if (input.correctedEntryId !== undefined) {
           const correction = await client.query(
             `SELECT 1 FROM workforce.attendance_entries original
@@ -96,6 +210,48 @@ export class OperationsService implements OnApplicationShutdown {
             [input.tenantId, input.id, item.id, item.startedAt, item.endedAt],
           );
         }
+        const canonicalInput =
+          rule === undefined
+            ? undefined
+            : JSON.stringify({
+                attendance: {
+                  workDate: input.workDate,
+                  startedAt: input.startedAt,
+                  endedAt: input.endedAt,
+                  timeZone: input.timeZone,
+                  breaks: [...input.breaks]
+                    .map(({ startedAt, endedAt }) => ({ startedAt, endedAt }))
+                    .sort((left, right) => left.startedAt.localeCompare(right.startedAt)),
+                },
+                calendar: dates.map((date) => ({ date, dayType: overrides.get(date) ?? null })),
+                rule,
+              });
+        const inputHash =
+          canonicalInput === undefined
+            ? undefined
+            : createHash('sha256').update(canonicalInput).digest('hex');
+        if (classification !== undefined && inputHash !== undefined && rule !== undefined)
+          await client.query(
+            `INSERT INTO workforce.attendance_calculation_snapshots
+            (tenant_id,attendance_entry_id,work_rule_version_id,input_hash,schema_version,
+             worked_minutes,scheduled_minutes,outside_schedule_minutes,
+             statutory_overtime_minutes,night_minutes,statutory_holiday_minutes,explanation)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb)`,
+            [
+              input.tenantId,
+              input.id,
+              rule.ruleVersionId,
+              inputHash,
+              classification.schemaVersion,
+              classification.workedMinutes,
+              classification.scheduledMinutes,
+              classification.outsideScheduleMinutes,
+              classification.statutoryOvertimeMinutes,
+              classification.nightMinutes,
+              classification.statutoryHolidayMinutes,
+              JSON.stringify(classification),
+            ],
+          );
         await this.recordEvidence(
           client,
           context,
@@ -105,6 +261,8 @@ export class OperationsService implements OnApplicationShutdown {
           {
             workDate: input.workDate,
             workedMinutes: entry.workedMinutes,
+            classification,
+            inputHash,
             breakCount: input.breaks.length,
             correctedEntryId: input.correctedEntryId,
           },
@@ -133,6 +291,8 @@ export class OperationsService implements OnApplicationShutdown {
                 replacement.id AS "supersededById",
                 decision.decision,decision.reason AS "decisionReason",
                 decision.decided_at AS "decidedAt",decision.decided_by AS "decidedBy",
+                snapshot.input_hash AS "calculationInputHash",
+                snapshot.explanation AS classification,
                 workforce.attendance_period_is_closed(
                   entry.tenant_id,entry.employment_id,entry.work_date) AS "periodClosed",
                 coalesce(jsonb_agg(jsonb_build_object(
@@ -145,8 +305,11 @@ export class OperationsService implements OnApplicationShutdown {
              ON replacement.tenant_id=entry.tenant_id AND replacement.corrected_entry_id=entry.id
            LEFT JOIN workforce.attendance_decisions decision
              ON decision.tenant_id=entry.tenant_id AND decision.attendance_entry_id=entry.id
+           LEFT JOIN workforce.attendance_calculation_snapshots snapshot
+             ON snapshot.tenant_id=entry.tenant_id AND snapshot.attendance_entry_id=entry.id
           WHERE entry.tenant_id=$1 AND entry.employment_id=$2
-          GROUP BY entry.tenant_id,entry.id,replacement.id,decision.tenant_id,decision.id
+          GROUP BY entry.tenant_id,entry.id,replacement.id,decision.tenant_id,decision.id,
+                   snapshot.tenant_id,snapshot.attendance_entry_id
           ORDER BY entry.work_date DESC,entry.started_at DESC,entry.id DESC LIMIT $3`,
         [context.tenantId, query.employmentId, query.limit],
       );
@@ -261,6 +424,214 @@ export class OperationsService implements OnApplicationShutdown {
         [context.tenantId, query.employmentId, query.limit],
       );
       return result.rows as readonly Record<string, unknown>[];
+    });
+  }
+
+  async createWorkRule(
+    input: CreateWorkRuleInput,
+    context: RequestContext,
+  ): Promise<CommandResult> {
+    this.assertAuthorized('workforce.work-rule.manage', input.tenantId, context);
+    const definition = {
+      timeZone: input.timeZone,
+      scheduledStartMinute: input.scheduledStartMinute,
+      scheduledEndMinute: input.scheduledEndMinute,
+      statutoryDailyMinutes: input.statutoryDailyMinutes,
+      nightStartMinute: input.nightStartMinute,
+      nightEndMinute: input.nightEndMinute,
+      statutoryHolidayWeekdays: [...new Set(input.statutoryHolidayWeekdays)].sort(),
+      requirementId: input.requirementId,
+      controlId: input.controlId,
+    };
+    const definitionHash = createHash('sha256').update(JSON.stringify(definition)).digest('hex');
+    return this.transaction(context, async (client) => {
+      await client.query(
+        `INSERT INTO workforce.work_rule_versions
+          (tenant_id,id,rule_code,version,effective_from,effective_to,time_zone,
+           scheduled_start_minute,scheduled_end_minute,statutory_daily_minutes,
+           night_start_minute,night_end_minute,statutory_holiday_weekdays,
+           requirement_id,control_id,expert_review_status,definition_hash,created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+        [
+          input.tenantId,
+          input.id,
+          input.ruleCode,
+          input.version,
+          input.effectiveFrom,
+          input.effectiveTo ?? null,
+          input.timeZone,
+          input.scheduledStartMinute,
+          input.scheduledEndMinute,
+          input.statutoryDailyMinutes,
+          input.nightStartMinute,
+          input.nightEndMinute,
+          definition.statutoryHolidayWeekdays,
+          input.requirementId,
+          input.controlId,
+          input.expertReviewStatus,
+          definitionHash,
+          context.actorId,
+        ],
+      );
+      await this.recordEvidence(
+        client,
+        context,
+        'workforce.work-rule.manage',
+        'work_rule',
+        input.id,
+        {
+          ruleCode: input.ruleCode,
+          version: input.version,
+          expertReviewStatus: input.expertReviewStatus,
+          definitionHash,
+        },
+      );
+      return { id: input.id, version: input.version };
+    });
+  }
+
+  async listWorkRules(
+    query: ListWorkRulesQuery,
+    context: RequestContext,
+  ): Promise<readonly Record<string, unknown>[]> {
+    this.assertAuthorized('workforce.work-rule.read', context.tenantId, context);
+    return this.transaction(context, async (client) => {
+      const result = await client.query(
+        `SELECT id,rule_code AS "ruleCode",version,
+                to_char(effective_from,'YYYY-MM-DD') AS "effectiveFrom",
+                to_char(effective_to,'YYYY-MM-DD') AS "effectiveTo",
+                scheduled_start_minute AS "scheduledStartMinute",
+                scheduled_end_minute AS "scheduledEndMinute",
+                statutory_daily_minutes AS "statutoryDailyMinutes",
+                night_start_minute AS "nightStartMinute",night_end_minute AS "nightEndMinute",
+                statutory_holiday_weekdays AS "statutoryHolidayWeekdays",
+                requirement_id AS "requirementId",control_id AS "controlId",
+                expert_review_status AS "expertReviewStatus",definition_hash AS "definitionHash"
+           FROM workforce.work_rule_versions WHERE tenant_id=$1
+          ORDER BY rule_code,version DESC LIMIT $2`,
+        [context.tenantId, query.limit],
+      );
+      return result.rows as readonly Record<string, unknown>[];
+    });
+  }
+
+  async assignWorkRule(
+    input: AssignWorkRuleInput,
+    context: RequestContext,
+  ): Promise<CommandResult> {
+    this.assertAuthorized('workforce.work-rule.manage', input.tenantId, context);
+    return this.transaction(context, async (client) => {
+      await this.assertEmploymentAccess(client, context, input.employmentId, ['hr']);
+      await client.query(
+        `INSERT INTO workforce.employment_work_rule_assignments
+          (tenant_id,id,employment_id,work_rule_version_id,effective_from,effective_to,assigned_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          input.tenantId,
+          input.id,
+          input.employmentId,
+          input.workRuleVersionId,
+          input.effectiveFrom,
+          input.effectiveTo ?? null,
+          context.actorId,
+        ],
+      );
+      await this.recordEvidence(
+        client,
+        context,
+        'workforce.work-rule.manage',
+        'work_rule_assignment',
+        input.id,
+        {
+          employmentId: input.employmentId,
+          workRuleVersionId: input.workRuleVersionId,
+          effectiveFrom: input.effectiveFrom,
+          effectiveTo: input.effectiveTo,
+        },
+      );
+      return { id: input.id, version: 1 };
+    });
+  }
+
+  async setEmploymentCalendarDay(
+    input: SetEmploymentCalendarDayInput,
+    context: RequestContext,
+  ): Promise<CommandResult> {
+    this.assertAuthorized('workforce.work-rule.manage', input.tenantId, context);
+    return this.transaction(context, async (client) => {
+      await this.assertEmploymentAccess(client, context, input.employmentId, ['hr']);
+      await client.query(
+        `INSERT INTO workforce.employment_calendar_days
+          (tenant_id,id,employment_id,work_date,day_type,reason,created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          input.tenantId,
+          input.id,
+          input.employmentId,
+          input.workDate,
+          input.dayType,
+          input.reason,
+          context.actorId,
+        ],
+      );
+      await this.recordEvidence(
+        client,
+        context,
+        'workforce.work-rule.manage',
+        'employment_calendar_day',
+        input.id,
+        {
+          employmentId: input.employmentId,
+          workDate: input.workDate,
+          dayType: input.dayType,
+          reason: input.reason,
+        },
+      );
+      return { id: input.id, version: 1 };
+    });
+  }
+
+  async activateWorkingTimeEnforcement(
+    input: ActivateWorkingTimeEnforcementInput,
+    context: RequestContext,
+  ): Promise<CommandResult> {
+    this.assertAuthorized('workforce.work-rule.manage', input.tenantId, context);
+    return this.transaction(context, async (client) => {
+      const uncovered = await client.query(
+        `SELECT employment.id
+           FROM workforce.employments employment
+          WHERE employment.tenant_id=$1 AND employment.status='active'
+            AND NOT EXISTS (
+              SELECT 1 FROM workforce.employment_work_rule_assignments assignment
+              JOIN workforce.work_rule_versions rule
+                ON rule.tenant_id=assignment.tenant_id AND rule.id=assignment.work_rule_version_id
+              WHERE assignment.tenant_id=employment.tenant_id
+                AND assignment.employment_id=employment.id
+                AND assignment.effective_from <= current_date
+                AND (assignment.effective_to IS NULL OR assignment.effective_to > current_date)
+                AND rule.expert_review_status='approved'
+                AND rule.effective_from <= current_date
+                AND (rule.effective_to IS NULL OR rule.effective_to > current_date)
+            ) LIMIT 1`,
+        [input.tenantId],
+      );
+      if (uncovered.rowCount !== 0)
+        throw new OperationConflictError('WORK_RULE_COVERAGE_INCOMPLETE');
+      const activation = await client.query(
+        `INSERT INTO workforce.working_time_enforcement (tenant_id,activated_by)
+         VALUES ($1,$2) ON CONFLICT DO NOTHING RETURNING tenant_id`,
+        [input.tenantId, context.actorId],
+      );
+      if (activation.rowCount === 0) return { id: input.tenantId, version: 1 };
+      await this.recordEvidence(
+        client,
+        context,
+        'workforce.work-rule.manage',
+        'working_time_enforcement',
+        input.tenantId,
+        { activated: true },
+      );
+      return { id: input.tenantId, version: 1 };
     });
   }
 
@@ -520,6 +891,12 @@ export class OperationsService implements OnApplicationShutdown {
       resourceTenantId: tenantId(resourceTenantId),
     });
     if (decision !== 'allow') throw new AccessDeniedError('Authorization denied');
+  }
+
+  private nextDate(value: string): string {
+    const date = new Date(`${value}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + 1);
+    return date.toISOString().slice(0, 10);
   }
 
   private async assertEmploymentAccess(

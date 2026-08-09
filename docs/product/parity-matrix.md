@@ -13,8 +13,8 @@
 | PAR-PLT-005 | Platform | Audit/evidence/search/export | Mandatory | vertical_slice | verified | authorized search/export、before/after、運用不足 |
 | PAR-PLT-006 | Platform | Notification/retry/dead-letter/reconcile | Mandatory | primitive | operational | DB再接続・health・retryは実証済み。adapter、admin UI、alert、dead-letter、replay不足 |
 | PAR-WKF-001 | Workforce | Employee/employment/assignment lifecycle | Mandatory | primitive | verified | 業務UI、履歴、JML、import/export不足 |
-| PAR-WKF-002 | Workforce | Clock/break/shift/calendar | Mandatory | vertical_slice | verified | 任意時刻・複数休憩・履歴・訂正を実装。shift/calendarは未実装 |
-| PAR-WKF-003 | Workforce | Working-time calculation/explanation | Mandatory | not_started | verified | overtime/night/holiday/rule説明なし |
+| PAR-WKF-002 | Workforce | Clock/break/shift/calendar | Mandatory | vertical_slice | verified | 任意時刻・複数休憩・履歴・訂正、配属別calendar履歴を実装。shift pattern管理は未実装 |
+| PAR-WKF-003 | Workforce | Working-time calculation/explanation | Mandatory | vertical_slice | verified | 版付きrule、所定内外・日次法定時間外・深夜・法定休日のimmutable説明snapshotを実装。36協定rolling上限、変形/フレックス、給与計算は未実装 |
 | PAR-WKF-004 | Workforce | Correction/approval/close/reopen | Mandatory | vertical_slice | verified | 追記型訂正・承認/差戻し・雇用月次close/reopen・DB lockを実装。team queue、代理、bulk、給与連携不足 |
 | PAR-WKF-005 | Workforce | Leave accrual/request/approval/balance | Mandatory | primitive | verified | UI、accrual/expiry、approval/取消不足 |
 | PAR-STP-001 | Source-to-Pay | Supplier onboarding/change control | Mandatory | primitive | verified | UI、duplicate、bank change approval不足 |

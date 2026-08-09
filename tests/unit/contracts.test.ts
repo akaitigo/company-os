@@ -4,6 +4,7 @@ import {
   applyReceiptSchema,
   createRequisitionSchema,
   createOrganizationUnitSchema,
+  createWorkRuleSchema,
   decideAttendanceSchema,
   postJournalSchema,
   recordAttendanceSchema,
@@ -34,6 +35,30 @@ describe('boundary contracts', () => {
         roles: Array.from({ length: 33 }, () => 'reader'),
       }),
     ).toThrow();
+  });
+
+  it('validates versioned daily work rules at the boundary', () => {
+    const input = {
+      id: '22222222-2222-4222-8222-222222222222',
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      ruleCode: 'STANDARD',
+      version: 1,
+      effectiveFrom: '2026-04-01',
+      timeZone: 'Asia/Tokyo' as const,
+      scheduledStartMinute: 540,
+      scheduledEndMinute: 1080,
+      statutoryDailyMinutes: 480,
+      nightStartMinute: 1320,
+      nightEndMinute: 300,
+      statutoryHolidayWeekdays: [0],
+      requirementId: 'JP-LABOR-003',
+      controlId: 'CTL-LABOR-OVERTIME-001',
+      expertReviewStatus: 'pending' as const,
+    };
+    expect(createWorkRuleSchema.parse(input)).toEqual(input);
+    expect(() => createWorkRuleSchema.parse({ ...input, statutoryDailyMinutes: 1441 })).toThrow();
+    expect(() => createWorkRuleSchema.parse({ ...input, scheduledEndMinute: 540 })).toThrow();
+    expect(() => createWorkRuleSchema.parse({ ...input, unexpected: true })).toThrow();
   });
 
   it('rejects unbalanced journals and oversized requisitions', () => {

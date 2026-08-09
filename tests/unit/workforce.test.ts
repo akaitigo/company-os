@@ -4,6 +4,7 @@ import {
   AttendanceEntry,
   AttendancePeriodTransition,
   AttendanceReview,
+  classifyDailyWork,
   Employment,
   LeaveBalance,
   LeaveRequest,
@@ -100,5 +101,129 @@ describe('workforce invariants', () => {
     expect(() => new AttendanceEntry({ ...base, workDate: '2026-08-08', breaks: [] })).toThrowError(
       /timezone/,
     );
+  });
+  it('classifies schedule, statutory overtime, night and holiday minutes without rounding', () => {
+    const entry = new AttendanceEntry({
+      workDate: '2026-08-09',
+      startedAt: '2026-08-09T08:30:00+09:00',
+      endedAt: '2026-08-09T18:15:00+09:00',
+      timeZone: 'Asia/Tokyo',
+      breaks: [{ startedAt: '2026-08-09T12:00:00+09:00', endedAt: '2026-08-09T12:45:00+09:00' }],
+    });
+    const result = classifyDailyWork(
+      entry,
+      {
+        ruleVersionId: '44444444-4444-4444-8444-444444444444',
+        ruleCode: 'STANDARD',
+        ruleVersion: 1,
+        timeZone: 'Asia/Tokyo',
+        scheduledStartMinute: 540,
+        scheduledEndMinute: 1080,
+        statutoryDailyMinutes: 480,
+        nightStartMinute: 1320,
+        nightEndMinute: 300,
+        requirementId: 'JP-LABOR-003',
+        expertReviewStatus: 'approved',
+      },
+      new Set(['2026-08-09']),
+    );
+    expect(result).toMatchObject({
+      workedMinutes: 540,
+      scheduledMinutes: 495,
+      outsideScheduleMinutes: 45,
+      statutoryOvertimeMinutes: 60,
+      nightMinutes: 0,
+      statutoryHolidayMinutes: 540,
+    });
+  });
+  it('classifies overnight schedule and excludes breaks from overlapping dimensions', () => {
+    const entry = new AttendanceEntry({
+      workDate: '2026-08-10',
+      startedAt: '2026-08-10T21:00:00+09:00',
+      endedAt: '2026-08-11T06:00:00+09:00',
+      timeZone: 'Asia/Tokyo',
+      breaks: [{ startedAt: '2026-08-11T01:00:00+09:00', endedAt: '2026-08-11T02:00:00+09:00' }],
+    });
+    const result = classifyDailyWork(
+      entry,
+      {
+        ruleVersionId: '44444444-4444-4444-8444-444444444444',
+        ruleCode: 'NIGHT',
+        ruleVersion: 1,
+        timeZone: 'Asia/Tokyo',
+        scheduledStartMinute: 1320,
+        scheduledEndMinute: 300,
+        statutoryDailyMinutes: 480,
+        nightStartMinute: 1320,
+        nightEndMinute: 300,
+        requirementId: 'JP-LABOR-003',
+        expertReviewStatus: 'approved',
+      },
+      new Set(['2026-08-11']),
+    );
+    expect(result).toMatchObject({
+      workedMinutes: 480,
+      scheduledMinutes: 360,
+      outsideScheduleMinutes: 120,
+      statutoryOvertimeMinutes: 0,
+      nightMinutes: 360,
+      statutoryHolidayMinutes: 300,
+    });
+  });
+  it('treats an explicit non-working calendar date as outside schedule', () => {
+    const entry = new AttendanceEntry({
+      workDate: '2026-08-10',
+      startedAt: '2026-08-10T09:00:00+09:00',
+      endedAt: '2026-08-10T18:00:00+09:00',
+      timeZone: 'Asia/Tokyo',
+      breaks: [],
+    });
+    const result = classifyDailyWork(
+      entry,
+      {
+        ruleVersionId: '44444444-4444-4444-8444-444444444444',
+        ruleCode: 'STANDARD',
+        ruleVersion: 1,
+        timeZone: 'Asia/Tokyo',
+        scheduledStartMinute: 540,
+        scheduledEndMinute: 1080,
+        statutoryDailyMinutes: 480,
+        nightStartMinute: 1320,
+        nightEndMinute: 300,
+        requirementId: 'JP-LABOR-003',
+        expertReviewStatus: 'approved',
+      },
+      new Set(),
+      new Set(['2026-08-10']),
+    );
+    expect(result.scheduledMinutes).toBe(0);
+    expect(result.outsideScheduleMinutes).toBe(540);
+  });
+  it('rejects attendance and break timestamps that are not minute aligned', () => {
+    expect(
+      () =>
+        new AttendanceEntry({
+          workDate: '2026-08-10',
+          startedAt: '2026-08-10T09:00:30+09:00',
+          endedAt: '2026-08-10T10:00:30+09:00',
+          timeZone: 'Asia/Tokyo',
+          breaks: [],
+        }),
+    ).toThrowError(/follow start/);
+    expect(
+      () =>
+        new AttendanceEntry({
+          workDate: '2026-08-10',
+          startedAt: '2026-08-10T09:00:00+09:00',
+          endedAt: '2026-08-10T11:00:00+09:00',
+          timeZone: 'Asia/Tokyo',
+          breaks: [
+            {
+              startedAt: '2026-08-10T10:00:30+09:00',
+              endedAt: '2026-08-10T10:30:30+09:00',
+            },
+          ],
+        }),
+    ).toThrowError(/whole minutes/);
   });
 });

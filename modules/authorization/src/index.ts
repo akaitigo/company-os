@@ -31,6 +31,8 @@ const roleActions: Readonly<Record<string, readonly string[]>> = {
     'workforce.attendance.read',
     'workforce.attendance.review',
     'workforce.attendance.period.manage',
+    'workforce.work-rule.manage',
+    'workforce.work-rule.read',
     'workforce.leave.request',
   ],
   'procurement-buyer': ['procurement.requisition.create'],

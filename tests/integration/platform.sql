@@ -48,6 +48,67 @@ ROLLBACK;
 
 BEGIN;
 INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
+VALUES ('99999999-9999-4999-8999-999999999999','60606060-6060-4060-8060-606060606060','RULES','Rules','2026-04-01');
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('99999999-9999-4999-8999-999999999999','61616161-6161-4161-8161-616161616161','person','Rule Worker');
+INSERT INTO workforce.employments
+  (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+VALUES ('99999999-9999-4999-8999-999999999999','62626262-6262-4262-8262-626262626262',
+  '61616161-6161-4161-8161-616161616161','60606060-6060-4060-8060-606060606060','2026-04-01',2400,'active');
+SET LOCAL ROLE company_os_app;
+SELECT set_config('app.tenant_id','99999999-9999-4999-8999-999999999999',true);
+INSERT INTO workforce.work_rule_versions
+  (tenant_id,id,rule_code,version,effective_from,time_zone,scheduled_start_minute,
+   scheduled_end_minute,statutory_daily_minutes,night_start_minute,night_end_minute,
+   requirement_id,control_id,expert_review_status,definition_hash,created_by)
+VALUES ('99999999-9999-4999-8999-999999999999','63636363-6363-4363-8363-636363636363',
+  'TEST_RULE',1,'2026-04-01','Asia/Tokyo',540,1080,480,1320,300,
+  'JP-LABOR-003','CTL-LABOR-OVERTIME-001','approved',repeat('a',64),
+  '64646464-6464-4464-8464-646464646464');
+INSERT INTO workforce.employment_work_rule_assignments
+  (tenant_id,id,employment_id,work_rule_version_id,effective_from,assigned_by)
+VALUES ('99999999-9999-4999-8999-999999999999','65656565-6565-4565-8565-656565656565',
+  '62626262-6262-4262-8262-626262626262','63636363-6363-4363-8363-636363636363',
+  '2026-04-01','64646464-6464-4464-8464-646464646464');
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO workforce.employment_work_rule_assignments
+      (tenant_id,id,employment_id,work_rule_version_id,effective_from,assigned_by)
+    VALUES ('99999999-9999-4999-8999-999999999999','66666666-6666-4666-8666-666666666666',
+      '62626262-6262-4262-8262-626262626262','63636363-6363-4363-8363-636363636363',
+      '2027-01-01','64646464-6464-4464-8464-646464646464');
+    RAISE EXCEPTION 'overlapping work rule assignment unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM='overlapping work rule assignment unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+END;
+$$;
+INSERT INTO workforce.employment_calendar_days
+  (tenant_id,id,employment_id,work_date,day_type,reason,created_by)
+VALUES
+  ('99999999-9999-4999-8999-999999999999','67676767-6767-4767-8767-676767676767',
+   '62626262-6262-4262-8262-626262626262','2026-08-10','working','initial',
+   '64646464-6464-4464-8464-646464646464'),
+  ('99999999-9999-4999-8999-999999999999','68686868-6868-4868-8868-686868686868',
+   '62626262-6262-4262-8262-626262626262','2026-08-10','statutory_holiday','correction',
+   '64646464-6464-4464-8464-646464646464');
+DO $$
+BEGIN
+  IF (SELECT max(sequence) FROM workforce.employment_calendar_days
+       WHERE employment_id='62626262-6262-4262-8262-626262626262') <> 2 THEN
+    RAISE EXCEPTION 'calendar correction sequence was not assigned';
+  END IF;
+  PERFORM set_config('app.tenant_id','77777777-7777-4777-8777-777777777777',true);
+  IF EXISTS (SELECT 1 FROM workforce.work_rule_versions WHERE rule_code='TEST_RULE') THEN
+    RAISE EXCEPTION 'work rule leaked through tenant RLS';
+  END IF;
+END;
+$$;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
 VALUES ('99999999-9999-4999-8999-999999999999','41414141-4141-4141-8141-414141414141','REVIEW','Review','2026-04-01');
 INSERT INTO party.parties (tenant_id,id,party_type,display_name)
 VALUES ('99999999-9999-4999-8999-999999999999','42424242-4242-4242-8242-424242424242','person','Review Worker');
