@@ -11,7 +11,7 @@
 | PAR-PLT-003 | Platform | Workflow/task/delegation/escalation | Mandatory | primitive | verified | 利用者inboxと運用処理が未接続 |
 | PAR-PLT-004 | Platform | Documents/retention/legal hold | Mandatory | primitive | verified | content adapter、scan、UI、disposition未接続 |
 | PAR-PLT-005 | Platform | Audit/evidence/search/export | Mandatory | vertical_slice | verified | authorized search/export、before/after、運用不足 |
-| PAR-PLT-006 | Platform | Notification/retry/dead-letter/reconcile | Mandatory | primitive | operational | adapter、admin UI、alert、replay不足 |
+| PAR-PLT-006 | Platform | Notification/retry/dead-letter/reconcile | Mandatory | primitive | operational | DB再接続・health・retryは実証済み。adapter、admin UI、alert、dead-letter、replay不足 |
 | PAR-WKF-001 | Workforce | Employee/employment/assignment lifecycle | Mandatory | primitive | verified | 業務UI、履歴、JML、import/export不足 |
 | PAR-WKF-002 | Workforce | Clock/break/shift/calendar | Mandatory | vertical_slice | verified | 任意時刻・複数休憩・履歴・訂正を実装。shift/calendarは未実装 |
 | PAR-WKF-003 | Workforce | Working-time calculation/explanation | Mandatory | not_started | verified | overtime/night/holiday/rule説明なし |
