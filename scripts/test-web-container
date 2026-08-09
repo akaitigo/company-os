@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+image="company-os-web:artifact-test"
+container="company-os-web-artifact-test-${$}"
+temp_dir="$(mktemp -d)"
+cleanup() {
+  docker rm -f "$container" >/dev/null 2>&1 || true
+  rm -rf "$temp_dir"
+}
+trap cleanup EXIT
+
+mkdir -p "$temp_dir/docker-config"
+DOCKER_CONFIG="${DOCKER_CONFIG:-$temp_dir/docker-config}" docker build \
+  --file infra/containers/web.Dockerfile --tag "$image" . >/dev/null
+
+[[ "$(docker image inspect "$image" --format '{{.Config.User}}')" == '10001:10001' ]]
+docker run --detach --name "$container" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  --publish 127.0.0.1:3101:3000 \
+  --env SESSION_SECRET=container-test-session-secret-at-least-32-characters \
+  --env OIDC_ISSUER=https://idp.example.invalid/realms/company-os \
+  --env OIDC_CLIENT_ID=company-os-web \
+  --env OIDC_REDIRECT_URI=http://localhost:3101/auth/callback \
+  --env API_INTERNAL_URL=http://host.docker.internal:3001 \
+  "$image" >/dev/null
+
+for _ in $(seq 1 30); do
+  curl --fail --silent --max-time 2 http://127.0.0.1:3101/api/health/ready >/dev/null && break
+  sleep 1
+done
+if ! curl --fail --silent --max-time 2 http://127.0.0.1:3101/api/health/ready >/dev/null; then
+  docker logs "$container" >&2
+  echo 'Web container did not become ready within 30 seconds.' >&2
+  exit 1
+fi
+curl --fail --silent http://127.0.0.1:3101/company-os-mark.svg | grep -q '<svg'
+runtime_user="$(docker exec "$container" id -u):$(docker exec "$container" id -g)"
+[[ "$runtime_user" == '10001:10001' ]]
+artifact_identity="$(docker exec "$container" sh -c "tr -d '\\n' < /app/dist/web/ARTIFACT.sha256")"
+image_identity="$(docker image inspect "$image" --format '{{.Id}}')"
+image_size="$(docker image inspect "$image" --format '{{.Size}}')"
+compressed_size="$(docker save "$image" | gzip -c | wc -c | tr -d ' ')"
+(( compressed_size <= 104857600 )) || {
+  echo "Web runtime image exceeds 100 MiB compressed: $compressed_size" >&2
+  exit 1
+}
+
+started_at="$(date +%s)"
+docker stop --time 10 "$container" >/dev/null
+stopped_at="$(date +%s)"
+(( stopped_at - started_at <= 10 ))
+! docker logs "$container" 2>&1 | grep -q 'next start.*does not work'
+
+echo "Web container passed: user=$runtime_user artifact=$artifact_identity image=$image_identity compressedBytes=$compressed_size engineBytes=$image_size read-only=true."

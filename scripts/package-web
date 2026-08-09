@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source_dir="$repo_dir/apps/web/.next"
+artifact_dir="$repo_dir/dist/web"
+standalone_dir="$source_dir/standalone"
+runtime_dir="$standalone_dir/apps/web"
+
+[[ -f "$runtime_dir/server.js" ]] || {
+  echo 'Next.js standalone server is missing; run the Web production build first.' >&2
+  exit 66
+}
+[[ -d "$source_dir/static" ]] || { echo 'Next.js static output is missing.' >&2; exit 66; }
+
+rm -rf "$artifact_dir"
+mkdir -p "$artifact_dir"
+cp -R "$standalone_dir/." "$artifact_dir/"
+mkdir -p "$artifact_dir/apps/web/.next"
+cp -R "$source_dir/static" "$artifact_dir/apps/web/.next/static"
+if [[ -d "$repo_dir/apps/web/public" ]]; then
+  cp -R "$repo_dir/apps/web/public" "$artifact_dir/apps/web/public"
+fi
+
+(
+  cd "$artifact_dir"
+  find . -type l -print0 | LC_ALL=C sort -z | while IFS= read -r -d '' link; do
+    printf '%s\t%s\n' "$link" "$(readlink "$link")"
+  done > SYMLINKS.manifest
+  find . -type f ! -name MANIFEST.sha256 ! -name ARTIFACT.sha256 -print0 |
+    LC_ALL=C sort -z | xargs -0 sha256sum > MANIFEST.sha256
+  sha256sum MANIFEST.sha256 | awk '{print $1}' > ARTIFACT.sha256
+)
+
+echo "Packaged Web artifact: $(tr -d '\n' < "$artifact_dir/ARTIFACT.sha256")"

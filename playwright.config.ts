@@ -22,8 +22,8 @@ export default defineConfig({
       timeout: 60_000,
     },
     {
-      command: 'pnpm --filter @company-os/web start',
-      url: 'http://127.0.0.1:3000',
+      command: './scripts/start-web',
+      url: 'http://127.0.0.1:3000/api/health/ready',
       reuseExistingServer: false,
       timeout: 60_000,
     },

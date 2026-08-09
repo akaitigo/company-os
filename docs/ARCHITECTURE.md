@@ -4,6 +4,8 @@
 
 Company OS V1はTypeScript modular monolithです。Next.js WebはOIDC sessionと表示状態だけを所有し、NestJS APIが認証済みcommand boundary、domain modulesが不変条件、PostgreSQLが業務正本、workerがoutbox projectionを所有します。Keycloakはidentity source、OpenTelemetry Collectorはtelemetry出口です。document object本体はS3-compatible managed serviceへのadapter境界とし、V1 repositoryはmetadata、checksum、classification、retentionだけを所有します。
 
+Webのproduction境界は`dist/web`のNext.js standalone artifactです。workspaceやbuild cacheはruntime依存ではなく、static/publicを含むchecksum付きartifactを`start-web`が検証して起動します。同じentrypointをlocal、VM、container、Playwrightで共有し、container filesystemはread-only、processは非rootです。
+
 依存方向は`apps -> modules -> packages`です。domain module間の直接依存は禁止し、共有型はkernel/contractsへ置きます。architecture testがこの方向を検査します。
 
 ## データとtransaction

@@ -77,3 +77,9 @@ jobs:
       - run: ./scripts/test-keycloak-reconciliation
       - if: always()
         run: docker compose logs keycloak
+  web-container:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - run: ./scripts/test-web-container

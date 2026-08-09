@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-labelledby="title">
+  <title id="title">Company OS</title>
+  <rect width="32" height="32" rx="7" fill="#172554"/>
+  <path d="M8 23V9h7v4h9v10H8Zm4-4h3v-2h-3v2Zm7 0h2v-2h-2v2Z" fill="#eff6ff"/>
+</svg>

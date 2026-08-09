@@ -14,12 +14,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const authRequest = await unseal<AuthRequest>(encrypted);
     const config = await configuration();
-    const tokens = await oidc.authorizationCodeGrant(config, new URL(request.url), {
+    const callbackUrl = new URL(
+      process.env['OIDC_REDIRECT_URI'] ?? 'http://localhost:3000/auth/callback',
+    );
+    callbackUrl.search = request.nextUrl.search;
+    const tokens = await oidc.authorizationCodeGrant(config, callbackUrl, {
       pkceCodeVerifier: authRequest.verifier,
       expectedState: authRequest.state,
     });
     const expiresIn = Math.min(tokens.expires_in ?? 300, 900);
-    const response = NextResponse.redirect(new URL('/', request.url));
+    const response = NextResponse.redirect(new URL('/', callbackUrl));
     response.cookies.delete('company_os_auth_request');
     response.cookies.set(
       'company_os_session',
