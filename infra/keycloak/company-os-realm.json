@@ -61,6 +61,7 @@
       { "name": "organization-admin" },
       { "name": "workforce-manager" },
       { "name": "workforce-employee" },
+      { "name": "workforce-hr" },
       { "name": "procurement-buyer" },
       { "name": "finance-accountant" },
       { "name": "organization-reader" },

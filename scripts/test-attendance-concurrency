@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+read -r tenant_id < /proc/sys/kernel/random/uuid
+read -r unit_id < /proc/sys/kernel/random/uuid
+read -r party_id < /proc/sys/kernel/random/uuid
+read -r employment_id < /proc/sys/kernel/random/uuid
+read -r entry_id < /proc/sys/kernel/random/uuid
+read -r first_decision_id < /proc/sys/kernel/random/uuid
+read -r second_decision_id < /proc/sys/kernel/random/uuid
+read -r actor_id < /proc/sys/kernel/random/uuid
+
+docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os -c \
+  "INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
+     VALUES ('$tenant_id','$unit_id','RACE','Race test','2026-04-01');
+   INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+     VALUES ('$tenant_id','$party_id','person','Race worker');
+   INSERT INTO workforce.employments
+     (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+     VALUES ('$tenant_id','$employment_id','$party_id','$unit_id','2026-04-01',2400,'active');
+   INSERT INTO workforce.attendance_entries
+     (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+     VALUES ('$tenant_id','$entry_id','$employment_id','2028-03-01',
+             '2028-03-01T00:00:00Z','2028-03-01T09:00:00Z',0,'manual','submitted','$actor_id');" \
+  >/dev/null
+
+first_log="$(mktemp)"
+second_log="$(mktemp)"
+trap 'rm -f "$first_log" "$second_log"' EXIT
+decision_sql() {
+  local decision_id="$1"
+  local decision="$2"
+  docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U company_os -d company_os -c \
+    "INSERT INTO workforce.attendance_decisions
+       (tenant_id,id,attendance_entry_id,employment_id,decision,reason,decided_by)
+     VALUES ('$tenant_id','$decision_id','$entry_id','$employment_id','$decision',
+             'concurrent review','$actor_id');"
+}
+
+set +e
+decision_sql "$first_decision_id" approved >"$first_log" 2>&1 &
+first_pid="$!"
+decision_sql "$second_decision_id" rejected >"$second_log" 2>&1 &
+second_pid="$!"
+wait "$first_pid"
+first_status="$?"
+wait "$second_pid"
+second_status="$?"
+set -e
+
+if [[ "$first_status" == "$second_status" ]]; then
+  echo 'Concurrent attendance decisions must produce exactly one success.' >&2
+  sed -n '1,20p' "$first_log" >&2
+  sed -n '1,20p' "$second_log" >&2
+  exit 1
+fi
+decision_count="$(docker compose exec -T postgres psql -At -U company_os -d company_os -c \
+  "SELECT count(*) FROM workforce.attendance_decisions
+    WHERE tenant_id='$tenant_id' AND attendance_entry_id='$entry_id'")"
+[[ "$decision_count" == '1' ]]
+echo 'Concurrent attendance review produced one durable decision and one conflict.'

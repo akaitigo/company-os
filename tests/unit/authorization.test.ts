@@ -81,5 +81,38 @@ describe('authorization', () => {
         resourceTenantId: tenantA,
       }),
     ).toBe('deny');
+    expect(
+      authorize({
+        principal: employee,
+        action: 'workforce.attendance.review',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('deny');
+  });
+
+  it('limits period management to workforce HR', () => {
+    const manager = { actorId: actor, tenantId: tenantA, roles: ['workforce-manager'] };
+    const hr = { actorId: actor, tenantId: tenantA, roles: ['workforce-hr'] };
+    expect(
+      authorize({
+        principal: manager,
+        action: 'workforce.attendance.review',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
+    expect(
+      authorize({
+        principal: manager,
+        action: 'workforce.attendance.period.manage',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('deny');
+    expect(
+      authorize({
+        principal: hr,
+        action: 'workforce.attendance.period.manage',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
   });
 });

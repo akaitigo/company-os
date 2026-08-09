@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ConflictException,
   ForbiddenException,
   Get,
   Inject,
@@ -13,16 +14,23 @@ import {
   allocateCostSchema,
   applyReceiptSchema,
   createRequisitionSchema,
+  decideAttendanceSchema,
+  listAttendancePeriodsQuerySchema,
   listAttendanceQuerySchema,
   postJournalSchema,
   recordAttendanceSchema,
   requestLeaveSchema,
   requestContextSchema,
+  transitionAttendancePeriodSchema,
 } from '@company-os/contracts';
 import { DomainError } from '@company-os/kernel';
 import type { AuthenticatedRequest } from './auth.guard.js';
 import { AccessDeniedError } from './organization.service.js';
-import { OperationConflictError, OperationsService } from './operations.service.js';
+import {
+  AttendanceConflictError,
+  OperationConflictError,
+  OperationsService,
+} from './operations.service.js';
 
 @Controller('/v1')
 export class OperationsController {
@@ -39,6 +47,31 @@ export class OperationsController {
   listAttendance(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
     return this.execute(listAttendanceQuerySchema.safeParse(query), request, (input, context) =>
       this.service.listAttendance(input, context),
+    );
+  }
+
+  @Post('/workforce/attendance-decisions')
+  decideAttendance(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(decideAttendanceSchema.safeParse(body), request, (input, context) =>
+      this.service.decideAttendance(input, context),
+    );
+  }
+
+  @Post('/workforce/attendance-period-events')
+  transitionAttendancePeriod(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(
+      transitionAttendancePeriodSchema.safeParse(body),
+      request,
+      (input, context) => this.service.transitionAttendancePeriod(input, context),
+    );
+  }
+
+  @Get('/workforce/attendance-period-events')
+  listAttendancePeriods(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(
+      listAttendancePeriodsQuerySchema.safeParse(query),
+      request,
+      (input, context) => this.service.listAttendancePeriods(input, context),
     );
   }
 
@@ -92,6 +125,7 @@ export class OperationsController {
       return await command(input.data, context.data);
     } catch (error) {
       if (error instanceof AccessDeniedError) throw new ForbiddenException();
+      if (error instanceof AttendanceConflictError) throw new ConflictException(error.message);
       if (error instanceof OperationConflictError)
         throw new UnprocessableEntityException(error.message);
       if (error instanceof DomainError) throw new UnprocessableEntityException(error.message);

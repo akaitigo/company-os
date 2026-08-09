@@ -64,6 +64,40 @@ export const listAttendanceQuerySchema = z
   .strict();
 export type ListAttendanceQuery = z.infer<typeof listAttendanceQuerySchema>;
 
+export const decideAttendanceSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    employmentId: uuidSchema,
+    attendanceEntryId: uuidSchema,
+    decision: z.enum(['approved', 'rejected']),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+export type DecideAttendanceInput = z.infer<typeof decideAttendanceSchema>;
+
+export const transitionAttendancePeriodSchema = z
+  .object({
+    id: uuidSchema,
+    tenantId: uuidSchema,
+    employmentId: uuidSchema,
+    periodMonth: isoDateSchema.refine((value) => value.endsWith('-01'), {
+      message: 'Period month must be the first day of a calendar month',
+    }),
+    action: z.enum(['close', 'reopen']),
+    reason: z.string().trim().min(1).max(500),
+  })
+  .strict();
+export type TransitionAttendancePeriodInput = z.infer<typeof transitionAttendancePeriodSchema>;
+
+export const listAttendancePeriodsQuerySchema = z
+  .object({
+    employmentId: uuidSchema,
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+  })
+  .strict();
+export type ListAttendancePeriodsQuery = z.infer<typeof listAttendancePeriodsQuerySchema>;
+
 export const requestLeaveSchema = z
   .object({
     id: uuidSchema,
