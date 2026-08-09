@@ -9,15 +9,18 @@
 1. owner接続で`./scripts/migrate status`を実行する。`untracked_existing`は一度だけ`adopt`し、`drift`・`running`・`failed`は解消するまでdeployを停止する。
 2. secret managerから32文字以上の`MIGRATION_BACKUP_SIGNING_KEY`を注入し、PostgreSQLと同版の`pg_dump`を使う`./scripts/backup`でbackup artifactとHMAC署名manifestを生成してrestore rehearsal成功を確認する。本番の`apply`/`adopt`/`recover`は署名、対象DB名、24時間以内の取得時刻、archive形式、artifact SHA-256が一致するmanifestだけを受理する。緊急時のみ`MIGRATION_ALLOW_WITHOUT_BACKUP=true`を外部変更記録付きで使う。
 3. `DEPLOYMENT_PROFILE=SMB MIGRATION_BACKUP_EVIDENCE=/secure/path/database.dump.manifest ./scripts/migrate apply`をowner roleで実行する。DEV Composeは`./scripts/migrate apply`、外部DB/VM/Kubernetes jobは`PGHOST`、`PGPORT`、`PGUSER`、`PGPASSWORD`またはpassfile、`MIGRATION_DATABASE`を注入して同じcommandを使う。台帳導入前のN-1環境は、実際に導入済みのversionを`MIGRATION_ADOPT_THROUGH=0006 ./scripts/migrate adopt`のように明示してから`apply`する。
-4. `migration_state=applied`とapplication smoke testを確認する。
-5. immutable image digest、SBOM、security scan、CI結果をreleaseへ紐付ける。
-6. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
+4. Keycloak database backupとrestore rehearsalを確認し、secret managerから`KC_CLI_PASSWORD`（またはservice account用`KC_CLI_CLIENT_SECRET`）を注入する。`./scripts/reconcile-keycloak plan`のJSON Lines差分をreview後、`./scripts/reconcile-keycloak apply`を実行する。外部Keycloakでは`KEYCLOAK_KCADM`、`KEYCLOAK_URL`、`KEYCLOAK_ADMIN_REALM`を指定する。
+5. `migration_state=applied`、再度のKeycloak `plan`が全件`no-op`、application smoke testを確認する。
+6. immutable image digest、SBOM、security scan、CI結果をreleaseへ紐付ける。
+7. API/worker/Webを順に展開し、health、OIDC、outbox lag、error rateを確認する。
 
 `status`はDBを書き換えません。runnerはDB単位のadvisory lock、SHA-256 ledger、各migrationのverify SQLで二重実行・改変・不完全適用を拒否します。`running`はprocess中断の可能性を示すため`./scripts/migrate recover`でschemaを検証し、成功時のみ`applied`、不一致時は`failed`にします。`apply`はfailed行そのものを再実行せず、より新しい未登録のforward-fixだけを適用できます（failedが残るため終了statusは非zero）。その後`recover`で元のverifyを再検証します。release済みSQLは編集せず、新しいforward migrationを追加して`checksums.sha256`を更新します。
 
 ## Rollback / forward-fix
 
 migration fileは変更・削除しません。schema変更後の旧binary互換性がある場合だけapplicationをrollbackします。データmigration後はbackup restoreまたは新しいforward-fix migrationを使い、posted/audit evidenceをupdate/deleteしません。仕訳訂正はreversal、勤怠訂正はcorrected entry、rule変更は新versionです。
+
+Keycloak reconciliationは管理対象role/client/mapper/profile属性を削除せず、途中失敗までのadditive変更も戻しません。desired stateを新versionでforward-fixして再実行します。`company-os-reconcile-lock`がprocess終了後も残る場合は、実行中processがないことを変更記録とKeycloak auditで確認してからKeycloak管理者がそのclientだけを削除し、必ず`plan`から再開します。realm全体の復元はuser/credential/sessionも戻るため、通常の設定誤りでは行いません。
 
 ## Backup / recovery
 

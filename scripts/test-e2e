@@ -9,17 +9,11 @@ curl --fail --silent --retry 30 --retry-all-errors --retry-delay 2 --max-time 3 
 random_id=''
 read -r random_id < /proc/sys/kernel/random/uuid
 export E2E_USER_PASSWORD="${E2E_USER_PASSWORD:-${random_id//-/}}"
-keycloak_admin=(docker compose exec -T keycloak /opt/keycloak/bin/kcadm.sh)
+export KC_CLI_PASSWORD=local-development-only
+keycloak_admin=(docker compose exec -T -e KC_CLI_PASSWORD keycloak /opt/keycloak/bin/kcadm.sh)
+./scripts/reconcile-keycloak apply >/dev/null
 "${keycloak_admin[@]}" config credentials --server http://localhost:8080 --realm master \
-  --user admin --password local-development-only >/dev/null
-"${keycloak_admin[@]}" get users/profile -r company-os | jq \
-  'if any(.attributes[]; .name == "tenant_id") then . else .attributes += [{"name":"tenant_id","displayName":"Tenant ID","permissions":{"view":["admin","user"],"edit":["admin"]},"multivalued":false}] end' | \
-  "${keycloak_admin[@]}" update users/profile -r company-os -f -
-for required_role in workforce-employee workforce-hr; do
-  if ! "${keycloak_admin[@]}" get "roles/$required_role" -r company-os >/dev/null 2>&1; then
-    "${keycloak_admin[@]}" create roles -r company-os -s name="$required_role" >/dev/null
-  fi
-done
+  --user admin >/dev/null
 mapfile -t existing_user_ids < <(
   "${keycloak_admin[@]}" get users -r company-os -q username=e2e-user -q exact=true | jq -r '.[].id'
 )

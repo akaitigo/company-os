@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+import="$repo_dir/infra/keycloak/company-os-realm.json"
+desired="$repo_dir/infra/keycloak/reconciliation-v1.json"
+
+command -v jq >/dev/null || { echo 'jq is required.' >&2; exit 69; }
+
+jq -se '
+  .[0] as $import | .[1] as $desired |
+  $import.realm == $desired.realm and
+  ([$import.roles.realm[].name] | sort) == ([$desired.realmRoles[].name] | sort) and
+  all($desired.clients[]; . as $want |
+    ([$import.clients[] | select(.clientId == $want.clientId)] | length) == 1
+  )
+' "$import" "$desired" >/dev/null || {
+  echo 'Keycloak bootstrap realm and reconciliation desired state have different realms, roles, or clients.' >&2
+  exit 1
+}
+
+while IFS= read -r wanted; do
+  client_id="$(jq -r .clientId <<<"$wanted")"
+  imported="$(jq -c --arg id "$client_id" '.clients[] | select(.clientId == $id)' "$import")"
+  jq -e --argjson wanted "$wanted" '
+    . as $actual |
+    all($wanted.managed | keys[]; . as $key | $actual[$key] == $wanted.managed[$key]) and
+    ([.protocolMappers[]? | del(.id)] | sort_by(.name)) == ($wanted.protocolMappers | sort_by(.name))
+  ' <<<"$imported" >/dev/null || {
+    echo "Keycloak bootstrap client differs from desired state: $client_id" >&2
+    exit 1
+  }
+done < <(jq -c '.clients[]' "$desired")
+
+echo 'Keycloak bootstrap and reconciliation configuration are consistent.'

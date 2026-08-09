@@ -69,3 +69,11 @@ jobs:
           name: playwright-report
           path: playwright-report
           retention-days: 7
+  keycloak-reconciliation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - run: ./scripts/test-keycloak-reconciliation
+      - if: always()
+        run: docker compose logs keycloak
