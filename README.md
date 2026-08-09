@@ -48,6 +48,7 @@ pnpm exec playwright install chromium
 - [Architecture](docs/ARCHITECTURE.md)
 - [Product PRD](docs/product/PRD.md)
 - [SaaS replacement parity](docs/product/parity-matrix.md)
+- [Machine-readable capability ledger](docs/product/capabilities.json)
 - [Capability evidence model](docs/product/capability-evidence.md)
 - [Product quality loop](docs/product/quality-loop.md)
 - [HTTP API v1](docs/API.md)
