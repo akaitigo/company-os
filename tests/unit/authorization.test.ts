@@ -57,4 +57,29 @@ describe('authorization', () => {
       }),
     ).toBe('deny');
   });
+
+  it('lets employees record and read attendance without management powers', () => {
+    const employee = { actorId: actor, tenantId: tenantA, roles: ['workforce-employee'] };
+    expect(
+      authorize({
+        principal: employee,
+        action: 'workforce.attendance.record',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
+    expect(
+      authorize({
+        principal: employee,
+        action: 'workforce.attendance.read',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('allow');
+    expect(
+      authorize({
+        principal: employee,
+        action: 'workforce.leave.request',
+        resourceTenantId: tenantA,
+      }),
+    ).toBe('deny');
+  });
 });

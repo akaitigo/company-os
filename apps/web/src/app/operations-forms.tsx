@@ -22,25 +22,8 @@ function field(data: FormData, name: string): string {
 }
 
 export function OperationsForms(): React.JSX.Element {
-  const [attendanceStatus, setAttendanceStatus] = useState('');
   const [requisitionStatus, setRequisitionStatus] = useState('');
   const [journalStatus, setJournalStatus] = useState('');
-
-  async function attendance(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const workDate = field(data, 'workDate');
-    const ok = await command('attendance', {
-      id: crypto.randomUUID(),
-      employmentId: demo.employmentId,
-      workDate,
-      startedAt: `${workDate}T00:00:00Z`,
-      endedAt: `${workDate}T09:00:00Z`,
-      breakMinutes: 60,
-      source: 'manual',
-    });
-    setAttendanceStatus(ok ? '勤怠を記録しました。' : '勤怠を記録できませんでした。');
-  }
 
   async function requisition(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -82,19 +65,6 @@ export function OperationsForms(): React.JSX.Element {
 
   return (
     <div className="operations-grid">
-      <section aria-labelledby="attendance-heading">
-        <h2 id="attendance-heading">勤怠</h2>
-        <form onSubmit={(event) => void attendance(event)}>
-          <label>
-            勤務日
-            <input required name="workDate" type="date" />
-          </label>
-          <button type="submit">9時間勤務を記録</button>
-          <p role="status" aria-live="polite">
-            {attendanceStatus}
-          </p>
-        </form>
-      </section>
       <section aria-labelledby="requisition-heading">
         <h2 id="requisition-heading">購買申請</h2>
         <form onSubmit={(event) => void requisition(event)}>

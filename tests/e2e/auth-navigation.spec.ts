@@ -48,8 +48,23 @@ test('authenticated administrator creates an audited organization command', asyn
 
   const attendance = page.getByRole('region', { name: '勤怠' });
   await attendance.getByLabel('勤務日').fill('2026-08-09');
-  await attendance.getByRole('button', { name: '9時間勤務を記録' }).click();
+  await attendance.getByLabel('開始時刻').fill('08:30');
+  await attendance.getByLabel('終了日').fill('2026-08-09');
+  await attendance.getByLabel('終了時刻').fill('18:15');
+  await attendance.getByRole('button', { name: '休憩を追加' }).click();
+  await attendance.getByLabel('休憩1開始').fill('2026-08-09T12:00');
+  await attendance.getByLabel('休憩1終了').fill('2026-08-09T12:45');
+  await attendance.getByRole('button', { name: '勤怠を記録' }).click();
   await expect(attendance.getByRole('status')).toContainText('勤怠を記録しました');
+  await expect(attendance.getByRole('table')).toContainText('9時間0分');
+  await attendance.getByRole('button', { name: '訂正する' }).first().click();
+  await attendance.getByLabel('勤務日').fill('2026-08-09');
+  await attendance.getByLabel('開始時刻').fill('08:45');
+  await attendance.getByLabel('終了日').fill('2026-08-09');
+  await attendance.getByLabel('終了時刻').fill('18:15');
+  await attendance.getByRole('button', { name: '訂正版を記録' }).click();
+  await expect(attendance.getByRole('status')).toContainText('訂正版を記録しました');
+  await expect(attendance.getByRole('table')).toContainText('訂正済み');
 
   const requisition = page.getByRole('region', { name: '購買申請' });
   await requisition.getByLabel('目的').fill('E2E業務機器更新');
@@ -83,6 +98,39 @@ test('authenticated administrator creates an audited organization command', asyn
       endsOn: '2026-08-10',
       requestedMinutes: 60,
     });
+    const rejectedAttendance = await post('attendance', {
+      id: crypto.randomUUID(),
+      tenantId,
+      employmentId: '10000000-0000-4000-8000-000000000003',
+      workDate: '2026-08-09',
+      startedAt: '2026-08-09T00:00:00Z',
+      endedAt: '2026-08-09T09:00:00Z',
+      timeZone: 'Asia/Tokyo',
+      source: 'manual',
+      breaks: [
+        {
+          id: crypto.randomUUID(),
+          startedAt: '2026-08-09T03:00:00Z',
+          endedAt: '2026-08-09T04:00:00Z',
+        },
+        {
+          id: crypto.randomUUID(),
+          startedAt: '2026-08-09T03:30:00Z',
+          endedAt: '2026-08-09T04:30:00Z',
+        },
+      ],
+    });
+    const inaccessibleAttendance = await post('attendance', {
+      id: crypto.randomUUID(),
+      tenantId,
+      employmentId: '10000000-0000-4000-8000-000000000013',
+      workDate: '2026-08-09',
+      startedAt: '2026-08-09T00:00:00Z',
+      endedAt: '2026-08-09T09:00:00Z',
+      timeZone: 'Asia/Tokyo',
+      source: 'manual',
+      breaks: [],
+    });
     const receipt = await post('receipt', {
       id: crypto.randomUUID(),
       tenantId,
@@ -115,10 +163,19 @@ test('authenticated administrator creates an audited organization command', asyn
       ruleId: 'RULE-COST-DEMO',
       ruleVersion: 1,
     });
-    return { leave, receipt, allocation, rejectedAllocation };
+    return {
+      leave,
+      rejectedAttendance,
+      inaccessibleAttendance,
+      receipt,
+      allocation,
+      rejectedAllocation,
+    };
   });
   expect(commandResult).toEqual({
     leave: 201,
+    rejectedAttendance: 422,
+    inaccessibleAttendance: 403,
     receipt: 201,
     allocation: 201,
     rejectedAllocation: 422,

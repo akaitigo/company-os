@@ -19,3 +19,13 @@ export async function POST(
   if (path === undefined) return NextResponse.json({ error: 'Unknown command' }, { status: 404 });
   return proxyApi(request, path);
 }
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ command: string }> },
+): Promise<NextResponse> {
+  const { command } = await context.params;
+  const path = paths[command];
+  if (path === undefined) return NextResponse.json({ error: 'Unknown command' }, { status: 404 });
+  return proxyApi(request, path);
+}

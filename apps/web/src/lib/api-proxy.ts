@@ -22,6 +22,7 @@ export async function proxyApi(request: NextRequest, apiPath: string): Promise<N
   const token = await accessToken();
   if (token === undefined) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const api = new URL(apiPath, process.env['API_INTERNAL_URL'] ?? 'http://127.0.0.1:3001');
+  if (request.method === 'GET') api.search = request.nextUrl.search;
   let body: string | undefined;
   if (request.method !== 'GET') {
     const claims = decodeJwt(token);

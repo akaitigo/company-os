@@ -2,8 +2,10 @@ import {
   Body,
   Controller,
   ForbiddenException,
+  Get,
   Inject,
   Post,
+  Query,
   Req,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -11,11 +13,13 @@ import {
   allocateCostSchema,
   applyReceiptSchema,
   createRequisitionSchema,
+  listAttendanceQuerySchema,
   postJournalSchema,
   recordAttendanceSchema,
   requestLeaveSchema,
   requestContextSchema,
 } from '@company-os/contracts';
+import { DomainError } from '@company-os/kernel';
 import type { AuthenticatedRequest } from './auth.guard.js';
 import { AccessDeniedError } from './organization.service.js';
 import { OperationConflictError, OperationsService } from './operations.service.js';
@@ -28,6 +32,13 @@ export class OperationsController {
   recordAttendance(@Body() body: unknown, @Req() request: AuthenticatedRequest) {
     return this.execute(recordAttendanceSchema.safeParse(body), request, (input, context) =>
       this.service.recordAttendance(input, context),
+    );
+  }
+
+  @Get('/workforce/attendance')
+  listAttendance(@Query() query: unknown, @Req() request: AuthenticatedRequest) {
+    return this.execute(listAttendanceQuerySchema.safeParse(query), request, (input, context) =>
+      this.service.listAttendance(input, context),
     );
   }
 
@@ -83,6 +94,7 @@ export class OperationsController {
       if (error instanceof AccessDeniedError) throw new ForbiddenException();
       if (error instanceof OperationConflictError)
         throw new UnprocessableEntityException(error.message);
+      if (error instanceof DomainError) throw new UnprocessableEntityException(error.message);
       throw error;
     }
   }

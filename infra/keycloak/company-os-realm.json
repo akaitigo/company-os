@@ -60,6 +60,7 @@
     "realm": [
       { "name": "organization-admin" },
       { "name": "workforce-manager" },
+      { "name": "workforce-employee" },
       { "name": "procurement-buyer" },
       { "name": "finance-accountant" },
       { "name": "organization-reader" },

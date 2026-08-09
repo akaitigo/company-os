@@ -38,11 +38,31 @@ export const recordAttendanceSchema = z
     workDate: isoDateSchema,
     startedAt: z.iso.datetime({ offset: true }),
     endedAt: z.iso.datetime({ offset: true }),
-    breakMinutes: z.number().int().min(0).max(1440),
+    timeZone: z.literal('Asia/Tokyo'),
+    breaks: z
+      .array(
+        z
+          .object({
+            id: uuidSchema,
+            startedAt: z.iso.datetime({ offset: true }),
+            endedAt: z.iso.datetime({ offset: true }),
+          })
+          .strict(),
+      )
+      .max(10),
     source: z.enum(['manual', 'import', 'clock']),
+    correctedEntryId: uuidSchema.optional(),
   })
   .strict();
 export type RecordAttendanceInput = z.infer<typeof recordAttendanceSchema>;
+
+export const listAttendanceQuerySchema = z
+  .object({
+    employmentId: uuidSchema,
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+  })
+  .strict();
+export type ListAttendanceQuery = z.infer<typeof listAttendanceQuerySchema>;
 
 export const requestLeaveSchema = z
   .object({

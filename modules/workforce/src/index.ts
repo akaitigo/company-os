@@ -68,6 +68,75 @@ export class LeaveBalance {
     return this.grantedMinutes - this.reservedMinutes - this.consumedMinutes;
   }
 }
+
+export interface AttendanceBreak {
+  readonly startedAt: string;
+  readonly endedAt: string;
+}
+export interface AttendanceInput {
+  readonly workDate: string;
+  readonly startedAt: string;
+  readonly endedAt: string;
+  readonly timeZone: 'Asia/Tokyo';
+  readonly breaks: readonly AttendanceBreak[];
+}
+export class AttendanceEntry {
+  readonly elapsedMinutes: number;
+  readonly breakMinutes: number;
+  readonly workedMinutes: number;
+  constructor(readonly input: AttendanceInput) {
+    const started = Date.parse(input.startedAt);
+    const ended = Date.parse(input.endedAt);
+    if (!Number.isFinite(started) || !Number.isFinite(ended) || ended <= started)
+      throw new DomainError('INVALID_ATTENDANCE_BOUNDS', 'Attendance end must follow start');
+    const elapsedMs = ended - started;
+    if (elapsedMs % 60_000 !== 0 || elapsedMs > 48 * 60 * 60_000)
+      throw new DomainError(
+        'INVALID_ATTENDANCE_DURATION',
+        'Attendance must use whole minutes and not exceed 48 hours',
+      );
+    if (input.breaks.length > 10)
+      throw new DomainError('TOO_MANY_BREAKS', 'Attendance supports at most ten breaks');
+    const sorted = input.breaks
+      .map((item) => ({
+        ...item,
+        start: Date.parse(item.startedAt),
+        end: Date.parse(item.endedAt),
+      }))
+      .sort((left, right) => left.start - right.start);
+    let breakMs = 0;
+    for (const [index, item] of sorted.entries()) {
+      if (
+        !Number.isFinite(item.start) ||
+        !Number.isFinite(item.end) ||
+        item.end <= item.start ||
+        item.start < started ||
+        item.end > ended ||
+        (item.end - item.start) % 60_000 !== 0
+      )
+        throw new DomainError(
+          'INVALID_ATTENDANCE_BREAK',
+          'Break must use whole minutes within attendance bounds',
+        );
+      if (index > 0 && (sorted[index - 1]?.end ?? 0) > item.start)
+        throw new DomainError('OVERLAPPING_ATTENDANCE_BREAK', 'Attendance breaks cannot overlap');
+      breakMs += item.end - item.start;
+    }
+    if (breakMs >= elapsedMs)
+      throw new DomainError('INVALID_ATTENDANCE_BREAK', 'Breaks must be shorter than attendance');
+    const localDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: input.timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(started));
+    if (localDate !== input.workDate)
+      throw new DomainError('WORK_DATE_MISMATCH', 'Work date must match start in tenant timezone');
+    this.elapsedMinutes = elapsedMs / 60_000;
+    this.breakMinutes = breakMs / 60_000;
+    this.workedMinutes = this.elapsedMinutes - this.breakMinutes;
+  }
+}
 export type LeaveRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
 export class LeaveRequest {
   private status: LeaveRequestStatus = 'pending';

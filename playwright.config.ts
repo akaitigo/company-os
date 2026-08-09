@@ -16,13 +16,13 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: [
     {
-      command: 'pnpm --filter @company-os/api dev',
+      command: 'pnpm --filter @company-os/api start',
       url: 'http://127.0.0.1:3001/health/ready',
       reuseExistingServer: false,
       timeout: 60_000,
     },
     {
-      command: 'pnpm --filter @company-os/web dev',
+      command: 'pnpm --filter @company-os/web start',
       url: 'http://127.0.0.1:3000',
       reuseExistingServer: false,
       timeout: 60_000,

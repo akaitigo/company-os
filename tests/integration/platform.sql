@@ -48,6 +48,49 @@ ROLLBACK;
 
 BEGIN;
 INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
+VALUES ('99999999-9999-4999-8999-999999999999','30303030-3030-4030-8030-303030303030','TIME','Time','2026-04-01');
+INSERT INTO party.parties (tenant_id,id,party_type,display_name)
+VALUES ('99999999-9999-4999-8999-999999999999','31313131-3131-4131-8131-313131313131','person','Break Worker');
+INSERT INTO workforce.employments
+  (tenant_id,id,worker_party_id,organization_unit_id,effective_from,weekly_minutes,status)
+VALUES ('99999999-9999-4999-8999-999999999999','32323232-3232-4232-8232-323232323232',
+  '31313131-3131-4131-8131-313131313131','30303030-3030-4030-8030-303030303030','2026-04-01',2400,'active');
+SET LOCAL ROLE company_os_app;
+SELECT set_config('app.tenant_id', '99999999-9999-4999-8999-999999999999', true);
+INSERT INTO workforce.attendance_entries
+  (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+VALUES ('99999999-9999-4999-8999-999999999999','33333333-3333-4333-8333-333333333333',
+  '32323232-3232-4232-8232-323232323232','2026-08-09','2026-08-08T23:30:00Z','2026-08-09T09:15:00Z',45,
+  'manual','submitted','34343434-3434-4434-8434-343434343434');
+INSERT INTO workforce.attendance_breaks
+  (tenant_id,attendance_entry_id,id,started_at,ended_at)
+VALUES ('99999999-9999-4999-8999-999999999999','33333333-3333-4333-8333-333333333333',
+  '35353535-3535-4535-8535-353535353535','2026-08-09T03:00:00Z','2026-08-09T03:45:00Z');
+SET CONSTRAINTS ALL IMMEDIATE;
+DO $$
+BEGIN
+  SET CONSTRAINTS ALL DEFERRED;
+  BEGIN
+    INSERT INTO workforce.attendance_entries
+      (tenant_id,id,employment_id,work_date,started_at,ended_at,break_minutes,source,status,recorded_by)
+    VALUES ('99999999-9999-4999-8999-999999999999','36363636-3636-4636-8636-363636363636',
+      '32323232-3232-4232-8232-323232323232','2026-08-09','2026-08-08T23:30:00Z','2026-08-09T09:15:00Z',30,
+      'manual','submitted','34343434-3434-4434-8434-343434343434');
+    INSERT INTO workforce.attendance_breaks
+      (tenant_id,attendance_entry_id,id,started_at,ended_at)
+    VALUES ('99999999-9999-4999-8999-999999999999','36363636-3636-4636-8636-363636363636',
+      '37373737-3737-4737-8737-373737373737','2026-08-09T03:00:00Z','2026-08-09T04:00:00Z');
+    SET CONSTRAINTS ALL IMMEDIATE;
+    RAISE EXCEPTION 'inconsistent attendance break unexpectedly succeeded';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM = 'inconsistent attendance break unexpectedly succeeded' THEN RAISE; END IF;
+  END;
+END;
+$$;
+ROLLBACK;
+
+BEGIN;
+INSERT INTO organization.units (tenant_id,id,code,name,effective_from)
 VALUES ('99999999-9999-4999-8999-999999999999','20202020-2020-4020-8020-202020202020','OPS','Operations','2026-04-01');
 INSERT INTO party.parties (tenant_id,id,party_type,display_name)
 VALUES ('99999999-9999-4999-8999-999999999999','21212121-2121-4121-8121-212121212121','person','Attendance Worker');

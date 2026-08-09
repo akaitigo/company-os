@@ -85,8 +85,36 @@ describe('boundary contracts', () => {
         workDate: '2026-08-09',
         startedAt: 'not-a-time',
         endedAt: '2026-08-09T09:00:00Z',
-        breakMinutes: -1,
+        timeZone: 'Asia/Tokyo',
+        breaks: [],
         source: 'clock',
+      }),
+    ).toThrow();
+  });
+
+  it('accepts bounded attendance break intervals and correction identity', () => {
+    const input = {
+      id: '22222222-2222-4222-8222-222222222222',
+      tenantId: '11111111-1111-4111-8111-111111111111',
+      employmentId: '33333333-3333-4333-8333-333333333333',
+      workDate: '2026-08-09',
+      startedAt: '2026-08-09T08:30:00+09:00',
+      endedAt: '2026-08-09T18:15:00+09:00',
+      timeZone: 'Asia/Tokyo',
+      source: 'manual' as const,
+      breaks: [
+        {
+          id: '44444444-4444-4444-8444-444444444444',
+          startedAt: '2026-08-09T12:00:00+09:00',
+          endedAt: '2026-08-09T12:45:00+09:00',
+        },
+      ],
+    };
+    expect(recordAttendanceSchema.parse(input)).toEqual(input);
+    expect(() =>
+      recordAttendanceSchema.parse({
+        ...input,
+        breaks: Array.from({ length: 11 }, () => input.breaks[0]),
       }),
     ).toThrow();
   });
