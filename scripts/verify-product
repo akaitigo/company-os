@@ -40,7 +40,12 @@ for capability in capabilities:
         if not isinstance(paths, list) or not paths:
             errors.append(f"{capability_id}: evidence layer {layer} is empty")
         for path in paths:
-            if not (root / path).exists():
+            evidence_path = Path(path)
+            if evidence_path.is_absolute() or ".." in evidence_path.parts:
+                errors.append(f"{capability_id}: unsafe evidence path {path}")
+                continue
+            resolved = (root / evidence_path).resolve()
+            if not resolved.is_relative_to(root) or not resolved.is_file():
                 errors.append(f"{capability_id}: missing evidence path {path}")
     if capability["status"] in {"verified", "integrated"}:
         missing = sorted(required_layers - set(evidence))
