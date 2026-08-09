@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+database="${MIGRATION_DATABASE:-company_os}"
+[[ "$database" =~ ^[a-zA-Z0-9_]+$ ]] || { echo 'MIGRATION_DATABASE contains unsupported characters.' >&2; exit 64; }
+output_dir="${BACKUP_OUTPUT_DIR:-$repo_dir/artifacts/backups}"
+mkdir -p "$output_dir"
+created_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+artifact="$(cd "$output_dir" && pwd)/${database}-${stamp}.dump"
+manifest="${artifact}.manifest"
+
+if [[ -n "${PGHOST:-}" ]]; then
+  command -v pg_dump >/dev/null || { echo 'pg_dump is required for external PostgreSQL.' >&2; exit 69; }
+  pg_dump -Fc -d "$database" > "$artifact"
+else
+  docker compose -f "$repo_dir/compose.yaml" exec -T postgres pg_dump -Fc -U company_os "$database" > "$artifact"
+fi
+[[ -s "$artifact" ]] || { echo 'Backup artifact is empty.' >&2; exit 1; }
+checksum="$(sha256sum "$artifact" | cut -d' ' -f1)"
+signing_key="${MIGRATION_BACKUP_SIGNING_KEY:-}"
+[[ ${#signing_key} -ge 32 ]] || { echo 'MIGRATION_BACKUP_SIGNING_KEY must contain at least 32 characters.' >&2; exit 65; }
+canonical="$(printf 'format=company-os-backup-v1\ndatabase=%s\ncreated_at=%s\nartifact=%s\nsha256=%s\n' "$database" "$created_at" "$artifact" "$checksum")"
+signature="$(node -e "const c=require('node:crypto');process.stdout.write(c.createHmac('sha256',process.env.MIGRATION_BACKUP_SIGNING_KEY).update(process.argv[1]).digest('hex'))" "$canonical")"
+
+printf '%s\nsignature=%s\n' "$canonical" "$signature" > "$manifest"
+printf '%s\n' "$manifest"

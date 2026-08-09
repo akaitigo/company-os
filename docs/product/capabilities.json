@@ -48,7 +48,7 @@
     { "id": "PAR-FIN-006", "name": "TB, GL, P&L, balance sheet, cash and export", "priority": "mandatory", "status": "not_started", "evidence": {} },
     { "id": "PAR-CMP-001", "name": "Requirement-rule-command-evidence-test trace", "priority": "mandatory", "status": "primitive", "evidence": { "domain": ["modules/compliance/src/index.ts"], "persistence": ["compliance/schema/requirement.schema.yaml"] } },
     { "id": "PAR-OPS-001", "name": "Install, preflight, config, secrets and TLS", "priority": "mandatory", "status": "primitive", "evidence": { "operations": ["docs/OPERATIONS.md", "compose.yaml"] } },
-    { "id": "PAR-OPS-002", "name": "Upgrade, rollback, backup and restore", "priority": "mandatory", "status": "vertical_slice", "evidence": { "operations": ["scripts/test-restore", "docs/OPERATIONS.md"], "tests": ["scripts/test-restore"] } },
+    { "id": "PAR-OPS-002", "name": "Upgrade, rollback, backup and restore", "priority": "mandatory", "status": "vertical_slice", "evidence": { "operations": ["scripts/migrate", "scripts/test-restore", "docs/OPERATIONS.md"], "persistence": ["infra/postgres/migrations/checksums.sha256"], "tests": ["scripts/test-migration-runner", "scripts/test-restore"] } },
     { "id": "PAR-OPS-003", "name": "Monitoring, alert, support bundle and capacity", "priority": "mandatory", "status": "primitive", "evidence": { "operations": ["infra/otel/config.yaml"] } },
     { "id": "PAR-MIG-001", "name": "Source import, reconciliation and cutover", "priority": "mandatory", "status": "not_started", "evidence": {} }
   ]

@@ -10,8 +10,15 @@ if [[ ${#migrations[@]} -eq 0 ]]; then
 fi
 
 previous=""
+declare -A seen_versions=()
 for migration in "${migrations[@]}"; do
   current="$(basename "$migration")"
+  version="${current%%_*}"
+  if [[ -n "${seen_versions[$version]:-}" ]]; then
+    echo "Duplicate migration version $version: ${seen_versions[$version]} and $current" >&2
+    exit 1
+  fi
+  seen_versions[$version]="$current"
   if [[ -n "$previous" && "$current" < "$previous" ]]; then
     echo "Migration order is not monotonic: $current" >&2
     exit 1
@@ -20,8 +27,37 @@ for migration in "${migrations[@]}"; do
     echo "Destructive SQL is forbidden in forward migrations: $current" >&2
     exit 1
   fi
+  statements="$(awk '!/^[[:space:]]*(--.*)?$/ { if (!first) first=toupper($0); last=toupper($0) } END { print first; print last }' "$migration")"
+  first_statement="${statements%%$'\n'*}"
+  last_statement="${statements##*$'\n'}"
+  if [[ "$first_statement" != 'BEGIN;' || "$last_statement" != 'COMMIT;' ]]; then
+    echo "Migration must be an explicit transaction (BEGIN ... COMMIT): $current" >&2
+    exit 1
+  fi
+  verify="${migration%.sql}.verify.sql"
+  if [[ ! -s "$verify" ]]; then
+    echo "Migration verification file is required: $(basename "$verify")" >&2
+    exit 1
+  fi
   previous="$current"
 done
 
-echo "Migration policy passed: ${#migrations[@]} forward migration(s)"
+mapfile -t artifacts < <(find "$repo_dir/infra/postgres/migrations" -maxdepth 1 -type f -name '[0-9]*.sql' | sort)
+mapfile -t manifest_files < <(awk '{print $2}' "$repo_dir/infra/postgres/migrations/checksums.sha256")
+if [[ ${#manifest_files[@]} -ne ${#artifacts[@]} ]]; then
+  echo 'Migration checksum manifest does not contain exactly every SQL artifact.' >&2
+  exit 1
+fi
+for index in "${!artifacts[@]}"; do
+  if [[ "${manifest_files[$index]}" != "$(basename "${artifacts[$index]}")" ]]; then
+    echo "Migration checksum manifest mismatch at $(basename "${artifacts[$index]}")" >&2
+    exit 1
+  fi
+done
 
+(
+  cd "$repo_dir/infra/postgres/migrations"
+  sha256sum --check checksums.sha256
+)
+
+echo "Migration policy passed: ${#migrations[@]} forward migration(s)"
