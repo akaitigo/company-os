@@ -8,7 +8,7 @@
 
 `pnpm --filter @company-os/web build`は`dist/web`へstandalone server、`.next/static`、`public`、全fileの`MANIFEST.sha256`とそのidentityである`ARTIFACT.sha256`を生成します。VM/localとCIは`./scripts/start-web`を唯一のproduction entrypointとして使います。`SESSION_SECRET`（32文字以上）、`OIDC_ISSUER`、`OIDC_CLIENT_ID`、`OIDC_REDIRECT_URI`、`API_INTERNAL_URL`をsecret managerまたはruntime設定から注入します。loopback以外のOIDC issuer/redirectはHTTPS必須です。
 
-containerは`docker build -f infra/containers/web.Dockerfile -t company-os-web:<release> .`でbuildします。runtimeはUID/GID 10001、展開後128 MiB以下（2026-08-09 x86_64実測77.5 MB）をCIで強制し、`--read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m`で起動可能です。imageへsecretをbuild argやENVとして保存しません。health probeは`/api/health/ready`、停止猶予は10秒とします。`./scripts/test-web-artifact`が改変・設定不備・read-only・CSP・static・health・SIGTERMを、`./scripts/test-web-container`が実imageを検証します。
+containerは`docker build -f infra/containers/web.Dockerfile -t company-os-web:<release> .`でbuildします。runtimeはUID/GID 10001、`docker save | gzip`で100 MiB以下の転送sizeをCIで強制し、`--read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m`で起動可能です。Docker engine間で意味が異なる`.Size`は参考値として圧縮sizeと併記します。imageへsecretをbuild argやENVとして保存しません。health probeは`/api/health/ready`、停止猶予は10秒とします。`./scripts/test-web-artifact`が改変・設定不備・read-only・CSP・static・health・SIGTERMを、`./scripts/test-web-container`が実imageを検証します。
 
 ## Deploy
 

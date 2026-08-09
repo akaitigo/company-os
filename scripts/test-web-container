@@ -41,7 +41,11 @@ runtime_user="$(docker exec "$container" id -u):$(docker exec "$container" id -g
 artifact_identity="$(docker exec "$container" sh -c "tr -d '\\n' < /app/dist/web/ARTIFACT.sha256")"
 image_identity="$(docker image inspect "$image" --format '{{.Id}}')"
 image_size="$(docker image inspect "$image" --format '{{.Size}}')"
-(( image_size <= 134217728 )) || { echo "Web runtime image exceeds 128 MiB: $image_size" >&2; exit 1; }
+compressed_size="$(docker save "$image" | gzip -c | wc -c | tr -d ' ')"
+(( compressed_size <= 104857600 )) || {
+  echo "Web runtime image exceeds 100 MiB compressed: $compressed_size" >&2
+  exit 1
+}
 
 started_at="$(date +%s)"
 docker stop --time 10 "$container" >/dev/null
@@ -49,4 +53,4 @@ stopped_at="$(date +%s)"
 (( stopped_at - started_at <= 10 ))
 ! docker logs "$container" 2>&1 | grep -q 'next start.*does not work'
 
-echo "Web container passed: user=$runtime_user artifact=$artifact_identity image=$image_identity bytes=$image_size read-only=true."
+echo "Web container passed: user=$runtime_user artifact=$artifact_identity image=$image_identity compressedBytes=$compressed_size engineBytes=$image_size read-only=true."

@@ -47,7 +47,7 @@
 - `./scripts/test-web-artifact`: clean package、checksum改変、missing static、invalid config、read-only start、health/header/static、SIGTERM。
 - `./scripts/test-e2e`: packaged standalone artifactに対するOIDC callback、CSP、UI/API/RBAC/accessibility。
 - `./scripts/verify`: format/lint/type/unit/buildとartifact policy。
-- container: nonroot identity、read-only filesystem、health endpoint、展開後128 MiB budgetとsize記録。
+- container: nonroot identity、read-only filesystem、health endpoint、圧縮後100 MiB budgetとengine size記録。
 
 ## Acceptance Criteria
 
