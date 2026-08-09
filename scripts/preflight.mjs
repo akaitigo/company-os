@@ -134,7 +134,10 @@ async function dbCheck(connectionString, kind, runtimeUser) {
             ? `SELECT current_user, role.rolsuper, role.rolbypassrls, role.rolcreatedb,
              role.rolcreaterole, role.rolreplication,
              pg_has_role(current_user, 'company_os_app', 'member') AS app_member,
-             has_schema_privilege(current_user, 'migration', 'USAGE') AS migration_usage,
+             COALESCE(
+               has_schema_privilege(current_user, to_regnamespace('migration'), 'USAGE'),
+               false
+             ) AS migration_usage,
              has_database_privilege(current_user, current_database(), 'CREATE') AS database_create,
              EXISTS (
                SELECT FROM pg_namespace namespace
@@ -270,9 +273,18 @@ if (profile === 'SMB' && ownerDb !== undefined) {
   else pass('database.owner-tls');
   if (ownerUser === runtimeDbUser) fail('database.role-separation', 'same-role');
   else pass('database.role-separation');
+  if (
+    runtimeDb === undefined ||
+    ownerDb.hostname !== runtimeDb.hostname ||
+    (ownerDb.port || '5432') !== (runtimeDb.port || '5432') ||
+    decodeURIComponent(ownerDb.pathname) !== decodeURIComponent(runtimeDb.pathname)
+  )
+    fail('database.target-consistency', 'target-mismatch');
+  else pass('database.target-consistency');
 } else if (profile === 'DEV') {
   skip('database.owner-tls');
   skip('database.role-separation');
+  skip('database.target-consistency');
 }
 
 const expectedNode = (await readFile(path.join(repoDir, '.node-version'), 'utf8')).trim();

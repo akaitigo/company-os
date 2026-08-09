@@ -99,6 +99,8 @@ ALTER TABLE migration.schema_migrations OWNER TO migration_owner;
 REVOKE ALL ON SCHEMA migration FROM PUBLIC;
 REVOKE ALL ON migration.schema_migrations FROM PUBLIC;
 CREATE DATABASE preflight_migrate OWNER migration_owner;
+CREATE DATABASE preflight_empty;
+GRANT CONNECT ON DATABASE preflight_empty TO runtime_user;
 SQL
 
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
@@ -118,6 +120,7 @@ https_pid=$!
 
 root_cert="$(realpath "$temp_dir/postgres-cert/server.crt")"
 smb_runtime="postgresql://runtime_user:runtime-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
+smb_empty_runtime="postgresql://runtime_user:runtime-password-long-and-random@127.0.0.1:$db_port/preflight_empty?sslmode=verify-full&sslrootcert=$root_cert"
 smb_power="postgresql://runtime_power:power-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
 smb_owner="postgresql://migration_owner:migration-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
 smb_impostor="postgresql://migration_impostor:impostor-password-long-and-random@127.0.0.1:$db_port/preflight?sslmode=verify-full&sslrootcert=$root_cert"
@@ -145,6 +148,11 @@ if ! env "${smb_env[@]}" ./scripts/preflight check > "$temp_dir/smb.json"; then
   exit 1
 fi
 [[ "$(jq -r .status "$temp_dir/smb.json")" == pass ]]
+
+# DEV checks the runtime role before migrations, so a fresh database without
+# the migration schema must be treated as no migration access, not an error.
+env "${dev_env[@]}" DATABASE_URL="$smb_empty_runtime" ./scripts/preflight check > "$temp_dir/empty-db.json"
+[[ "$(jq -r .status "$temp_dir/empty-db.json")" == pass ]]
 for secret_fragment in "$smb_secret" "$smb_signing" runtime-password migration-password; do
   ! grep -Fq "$secret_fragment" "$temp_dir/smb.json"
 done
@@ -249,6 +257,7 @@ expect_failure bad-redirect config.OIDC_REDIRECT_URI OIDC_REDIRECT_URI=https://c
 expect_failure db-tls database.runtime-tls DATABASE_URL='postgresql://runtime:strong-password@db.example.com/company?sslmode=require'
 expect_failure db-protocol config.DATABASE_URL DATABASE_URL='https://db.example.com/company?sslmode=verify-full'
 expect_failure same-role database.role-separation MIGRATION_DATABASE_URL="$smb_runtime"
+expect_failure target-mismatch database.target-consistency DATABASE_URL="$smb_empty_runtime"
 
 printf '{}\n' > "$temp_dir/invalid-contract.json"
 if env "${dev_env[@]}" PREFLIGHT_CONTRACT="$temp_dir/invalid-contract.json" ./scripts/preflight validate > "$temp_dir/contract.json"; then
