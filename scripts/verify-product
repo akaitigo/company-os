@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+import json
+import os
+from pathlib import Path
+
+root = Path(__file__).resolve().parent.parent
+ledger_override = os.environ.get("PRODUCT_LEDGER_PATH")
+ledger_path = Path(ledger_override or root / "docs/product/capabilities.json")
+ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+
+errors: list[str] = []
+allowed = set(ledger["allowedStatuses"])
+required_layers = set(ledger["requiredVerificationLayers"])
+release_status = ledger["releaseStatus"]
+capabilities = ledger["capabilities"]
+ids: set[str] = set()
+
+if ledger_override is None:
+    legacy_status = json.loads(
+        (root / "docs/plans/v1-features.json").read_text(encoding="utf-8")
+    )["release_status"]
+    if legacy_status != release_status:
+        errors.append(
+            f"release status mismatch: product={release_status}, legacy={legacy_status}"
+        )
+
+for capability in capabilities:
+    capability_id = capability["id"]
+    if capability_id in ids:
+        errors.append(f"duplicate capability ID: {capability_id}")
+    ids.add(capability_id)
+    if capability["status"] not in allowed:
+        errors.append(f"{capability_id}: invalid status {capability['status']}")
+    if capability["priority"] not in {"mandatory", "optional"}:
+        errors.append(f"{capability_id}: invalid priority")
+    evidence = capability.get("evidence", {})
+    for layer, paths in evidence.items():
+        if layer not in required_layers:
+            errors.append(f"{capability_id}: unknown evidence layer {layer}")
+        if not isinstance(paths, list) or not paths:
+            errors.append(f"{capability_id}: evidence layer {layer} is empty")
+        for path in paths:
+            evidence_path = Path(path)
+            if evidence_path.is_absolute() or ".." in evidence_path.parts:
+                errors.append(f"{capability_id}: unsafe evidence path {path}")
+                continue
+            resolved = (root / evidence_path).resolve()
+            if not resolved.is_relative_to(root) or not resolved.is_file():
+                errors.append(f"{capability_id}: missing evidence path {path}")
+    if capability["status"] in {"verified", "integrated"}:
+        missing = sorted(required_layers - set(evidence))
+        if missing:
+            errors.append(f"{capability_id}: {capability['status']} missing layers {', '.join(missing)}")
+
+mandatory_incomplete = [
+    item["id"]
+    for item in capabilities
+    if item["priority"] == "mandatory" and item["status"] not in {"verified", "integrated"}
+]
+if release_status == "ga" and mandatory_incomplete:
+    errors.append("GA forbidden; incomplete mandatory capabilities: " + ", ".join(mandatory_incomplete))
+
+if errors:
+    raise SystemExit("Product evidence verification failed:\n- " + "\n- ".join(errors))
+
+print(
+    f"Product evidence verification passed: {len(capabilities)} capabilities, "
+    f"{len(mandatory_incomplete)} mandatory capability gaps, release={release_status}."
+)
