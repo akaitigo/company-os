@@ -4,6 +4,22 @@ import type { Page } from '@playwright/test';
 
 test.describe.configure({ mode: 'serial' });
 
+test('packaged production server exposes static, health, and hardened CSP', async ({
+  page,
+  request,
+}) => {
+  const ready = await request.get('/api/health/ready');
+  expect(ready.status()).toBe(200);
+  await expect(ready.json()).resolves.toEqual({ status: 'ready', service: 'web' });
+  const marker = await request.get('/company-os-mark.svg');
+  expect(marker.status()).toBe(200);
+  expect(await marker.text()).toContain('<svg');
+  const response = await page.goto('/');
+  const csp = response?.headers()['content-security-policy'];
+  expect(csp).toContain("default-src 'self'");
+  expect(csp).not.toContain('unsafe-eval');
+});
+
 async function login(page: Page, username: string): Promise<void> {
   const password = process.env['E2E_USER_PASSWORD'];
   expect(password).toBeTruthy();
@@ -249,6 +265,9 @@ test('authenticated administrator creates an audited organization command', asyn
     allocation: 201,
     rejectedAllocation: 422,
   });
+  await page.getByRole('link', { name: 'ログアウト' }).click();
+  await expect(page).toHaveURL('http://localhost:3000/');
+  await expect(page.getByRole('link', { name: 'ログイン' })).toBeVisible();
 });
 
 test('HR closes and reopens an approved attendance month', async ({ page }) => {

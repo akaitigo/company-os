@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$repo_dir"
+artifact_dir="$repo_dir/dist/web"
+temp_dir="$(mktemp -d)"
+server_pid=''
+cleanup() {
+  if [[ -n "$server_pid" ]] && kill -0 "$server_pid" 2>/dev/null; then
+    kill -TERM "$server_pid" 2>/dev/null || true
+    wait "$server_pid" 2>/dev/null || true
+  fi
+  chmod -R u+w "$artifact_dir" 2>/dev/null || true
+  rm -f "$artifact_dir/unexpected-test-file"
+  rm -rf "$temp_dir"
+}
+trap cleanup EXIT
+
+[[ -f "$artifact_dir/apps/web/server.js" ]] || pnpm --filter @company-os/web build >/dev/null
+
+runtime_env=(
+  SESSION_SECRET=artifact-test-session-secret-at-least-32-characters
+  OIDC_ISSUER=http://localhost:8080/realms/company-os
+  OIDC_CLIENT_ID=company-os-web
+  OIDC_REDIRECT_URI=http://localhost:3100/auth/callback
+  API_INTERNAL_URL=http://127.0.0.1:3001
+  WEB_HOST=127.0.0.1
+  PORT=3100
+)
+
+if env "${runtime_env[@]}" SESSION_SECRET=short ./scripts/start-web >"$temp_dir/config.log" 2>&1; then
+  echo 'Web accepted an undersized session secret.' >&2
+  exit 1
+fi
+grep -q 'SESSION_SECRET must contain at least 32 characters' "$temp_dir/config.log"
+if env "${runtime_env[@]}" OIDC_ISSUER=http://idp.example.invalid/realms/company \
+  ./scripts/start-web >"$temp_dir/url.log" 2>&1; then
+  echo 'Web accepted an insecure non-loopback OIDC issuer.' >&2
+  exit 1
+fi
+grep -q 'OIDC_ISSUER must use HTTPS outside loopback' "$temp_dir/url.log"
+
+mkdir -p "$temp_dir/missing/apps/web/public"
+cp "$artifact_dir/apps/web/server.js" "$temp_dir/missing/apps/web/server.js"
+cp "$artifact_dir/MANIFEST.sha256" "$artifact_dir/ARTIFACT.sha256" \
+  "$artifact_dir/SYMLINKS.manifest" "$temp_dir/missing/"
+if env "${runtime_env[@]}" WEB_ARTIFACT_DIR="$temp_dir/missing" ./scripts/start-web >"$temp_dir/missing.log" 2>&1; then
+  echo 'Web accepted an artifact without static assets.' >&2
+  exit 1
+fi
+grep -q 'packaged static assets are missing' "$temp_dir/missing.log"
+
+mkdir -p "$temp_dir/broken/apps/web/.next/static" "$temp_dir/broken/apps/web/public"
+cp "$artifact_dir/apps/web/server.js" "$temp_dir/broken/apps/web/server.js"
+cp "$artifact_dir/MANIFEST.sha256" "$artifact_dir/ARTIFACT.sha256" \
+  "$artifact_dir/SYMLINKS.manifest" "$temp_dir/broken/"
+if env "${runtime_env[@]}" WEB_ARTIFACT_DIR="$temp_dir/broken" ./scripts/start-web >"$temp_dir/integrity.log" 2>&1; then
+  echo 'Web accepted an incomplete artifact.' >&2
+  exit 1
+fi
+grep -q 'artifact checksum verification failed' "$temp_dir/integrity.log"
+
+touch "$artifact_dir/unexpected-test-file"
+if env "${runtime_env[@]}" ./scripts/start-web >"$temp_dir/extra-file.log" 2>&1; then
+  echo 'Web accepted an artifact with an unmanifested file.' >&2
+  exit 1
+fi
+grep -q 'artifact checksum verification failed' "$temp_dir/extra-file.log"
+rm -f "$artifact_dir/unexpected-test-file"
+
+chmod -R a-w "$artifact_dir"
+env "${runtime_env[@]}" ./scripts/start-web >"$temp_dir/server.log" 2>&1 &
+server_pid=$!
+for _ in $(seq 1 30); do
+  curl --fail --silent --max-time 2 http://127.0.0.1:3100/api/health/ready >/dev/null && break
+  sleep 1
+done
+curl --fail --silent http://127.0.0.1:3100/api/health/live | jq -e '.status == "live" and .service == "web"' >/dev/null
+curl --fail --silent http://127.0.0.1:3100/api/health/ready | jq -e '.status == "ready" and .service == "web"' >/dev/null
+curl --fail --silent http://127.0.0.1:3100/company-os-mark.svg | grep -q '<svg'
+headers="$(curl --fail --silent --head http://127.0.0.1:3100/)"
+grep -qi '^content-security-policy:' <<<"$headers"
+! grep -qi "content-security-policy:.*unsafe-eval" <<<"$headers"
+! grep -q 'next start.*does not work' "$temp_dir/server.log"
+
+kill -TERM "$server_pid"
+for _ in $(seq 1 10); do
+  kill -0 "$server_pid" 2>/dev/null || break
+  sleep 1
+done
+if kill -0 "$server_pid" 2>/dev/null; then
+  echo 'Web did not stop within 10 seconds after SIGTERM.' >&2
+  exit 1
+fi
+termination_status=0
+wait "$server_pid" || termination_status=$?
+[[ "$termination_status" -eq 0 || "$termination_status" -eq 143 ]] || {
+  echo "Web exited unexpectedly after SIGTERM: $termination_status" >&2
+  exit 1
+}
+server_pid=''
+
+echo "Web artifact passed: identity=$(tr -d '\n' < "$artifact_dir/ARTIFACT.sha256"), read-only, health, static, CSP, graceful shutdown."

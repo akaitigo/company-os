@@ -30,9 +30,12 @@ docker compose up -d --wait
 ./scripts/migrate status
 pnpm exec playwright install chromium
 ./scripts/test-e2e
+./scripts/test-web-container
 ```
 
 `.env.example`を基に設定し、placeholder credentialは必ず生成値またはworkload identityへ置換してください。demo seedは架空データのみで冪等です。E2E user/passwordは実行時に一時生成され、repositoryへ保存されません。
+
+Webのproduction buildは検証用checksumを含む`dist/web`を生成します。ローカルとVMは必要なruntime環境変数を注入して`./scripts/start-web`、containerは`infra/containers/web.Dockerfile`を使用します。どちらも同じentrypointとstandalone artifactを起動し、`next start`は使用しません。
 
 ## Security and supply chain
 
