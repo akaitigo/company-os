@@ -19,7 +19,7 @@
     "@company-os/workforce": "workspace:*",
     "@fastify/helmet": "13.1.0",
     "@nestjs/common": "11.1.28",
-    "@nestjs/core": "11.1.28",
+    "@nestjs/core": "11.1.29",
     "@nestjs/platform-fastify": "11.1.28",
     "fastify": "5.10.0",
     "pg": "8.18.0",
