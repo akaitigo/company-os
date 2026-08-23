@@ -8,10 +8,10 @@
     "start": "node dist/main.js"
   },
   "dependencies": {
-    "pg": "8.18.0",
+    "pg": "8.22.0",
     "zod": "4.3.5"
   },
   "devDependencies": {
-    "@types/pg": "8.16.0"
+    "@types/pg": "8.20.4"
   }
 }
