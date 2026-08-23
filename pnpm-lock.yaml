@@ -102,8 +102,8 @@ importers:
         specifier: 7.8.2
         version: 7.8.2
       zod:
-        specifier: 4.3.5
-        version: 4.3.5
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/pg':
         specifier: 8.16.0
@@ -143,8 +143,8 @@ importers:
         specifier: 8.18.0
         version: 8.18.0
       zod:
-        specifier: 4.3.5
-        version: 4.3.5
+        specifier: 4.4.3
+        version: 4.4.3
     devDependencies:
       '@types/pg':
         specifier: 8.16.0
@@ -189,8 +189,8 @@ importers:
         specifier: 6.2.8
         version: 6.2.8
       zod:
-        specifier: 4.3.5
-        version: 4.3.5
+        specifier: 4.4.3
+        version: 4.4.3
 
   modules/integration:
     dependencies:
@@ -225,8 +225,8 @@ importers:
   packages/contracts:
     dependencies:
       zod:
-        specifier: 4.3.5
-        version: 4.3.5
+        specifier: 4.4.3
+        version: 4.4.3
 
   packages/kernel: {}
 
@@ -2280,8 +2280,8 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
 
-  zod@4.3.5:
-    resolution: {integrity: sha512-k7Nwx6vuWx1IJ9Bjuf4Zt1PEllcwe7cls3VNzm4CQ1/hgtFUK2bRNG3rvnpPUhFjmqJKAKtjV576KnUkHocg/g==}
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
 
@@ -4106,4 +4106,4 @@ snapshots:
 
   yocto-queue@0.1.0: {}
 
-  zod@4.3.5: {}
+  zod@4.4.3: {}
