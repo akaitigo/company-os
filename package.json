@@ -9,10 +9,11 @@
   "pnpm": {
     "overrides": {
       "find-my-way": "9.7.0",
-      "sharp@0.35.3": "0.35.4",
       "fast-uri@3.1.5": "3.1.8",
       "fast-uri@4.1.2": "4.1.5",
-      "fastify@5.11.3": "5.12.5"
+      "fastify@5.11.3": "5.12.5",
+      "sharp": "0.35.5",
+      "source-map-js": "1.2.2"
     }
   },
   "scripts": {
