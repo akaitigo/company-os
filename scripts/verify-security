@@ -26,6 +26,8 @@ docker run --rm \
   "$trivy_image" fs --quiet --skip-version-check --format cyclonedx --output /output/company-os.cdx.json \
   --skip-dirs /src/.git --skip-dirs /src/node_modules --skip-dirs /src/artifacts /src
 
+docker compose build postgres
+
 while IFS= read -r image; do
   report_name="$(printf '%s' "$image" | tr -c '[:alnum:].-' '_')"
   docker run --rm \

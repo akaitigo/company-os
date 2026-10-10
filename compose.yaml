@@ -1,7 +1,10 @@
 name: company-os
 services:
   postgres:
-    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    image: company-os-postgres:18.4-gosu-go1.24.13
+    build:
+      context: .
+      dockerfile: infra/postgres/Dockerfile.gosu
     environment:
       POSTGRES_DB: company_os
       POSTGRES_USER: company_os
@@ -11,12 +14,12 @@ services:
       - postgres-data:/var/lib/postgresql
       - ./infra/postgres/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U company_os -d company_os']
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U company_os -d company_os']
       interval: 5s
       timeout: 3s
       retries: 20
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.3@sha256:9b0330756022422149aa6502eb2def8cd47c6e1b000c7c65cdb13e7c0133e992
+    image: quay.io/keycloak/keycloak:26.8.0@sha256:b0f60d489d51c5d113390bdf5461d4c06e6051be026c05549f2e1e10ec352bcc
     command: ['start-dev', '--health-enabled=true', '--import-realm']
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -25,7 +28,7 @@ services:
     volumes:
       - ./infra/keycloak/company-os-realm.json:/opt/keycloak/data/import/company-os-realm.json:ro
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.157.0@sha256:f2f01157055a9b2aab9df7118e1f1c9abf345e99b23bc7a2bc791db374a7d0f6
+    image: otel/opentelemetry-collector:0.162.0@sha256:310a800ad69ee430e7c541796852a242c9c7db97aaad4daa5ccf843c525fbdb2
     command: ['--config=/etc/otelcol/config.yaml']
     volumes: ['./infra/otel/config.yaml:/etc/otelcol/config.yaml:ro']
     ports: ['127.0.0.1:4317:4317', '127.0.0.1:4318:4318']

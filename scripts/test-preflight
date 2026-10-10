@@ -54,7 +54,8 @@ kill "$listener_pid" >/dev/null 2>&1 || true
 wait "$listener_pid" 2>/dev/null || true
 listener_pid=''
 
-docker compose up -d postgres keycloak otel-collector >/dev/null
+docker compose build postgres >/dev/null
+docker compose up -d --wait postgres keycloak otel-collector >/dev/null
 curl --fail --silent --retry 30 --retry-all-errors --retry-delay 1 --max-time 2 \
   http://127.0.0.1:8080/realms/company-os/.well-known/openid-configuration >/dev/null
 env "${dev_env[@]}" ./scripts/preflight check > "$temp_dir/dev.json"
@@ -66,13 +67,14 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=localhost \
   -addext subjectAltName=DNS:localhost,IP:127.0.0.1 \
   -keyout "$temp_dir/postgres-cert/server.key" \
   -out "$temp_dir/postgres-cert/server.crt" >/dev/null 2>&1
-docker run --rm --volume "$temp_dir/postgres-cert:/cert" \
-  --entrypoint chown postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
+docker run --rm --user root --volume "$temp_dir/postgres-cert:/cert" \
+  --entrypoint chown company-os-postgres:18.4-gosu-go1.24.13 \
   70:70 /cert/server.key /cert/server.crt
 docker run --detach --name "$postgres_container" --publish "127.0.0.1:$db_port:5432" \
+  --tmpfs /var/lib/postgresql:rw,uid=70,gid=70,mode=1777 \
   --env POSTGRES_DB=preflight --env POSTGRES_USER=bootstrap --env POSTGRES_PASSWORD=bootstrap-test-only \
   --volume "$temp_dir/postgres-cert:/cert:ro" \
-  postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15 \
+  company-os-postgres:18.4-gosu-go1.24.13 \
   -c ssl=on -c ssl_cert_file=/cert/server.crt -c ssl_key_file=/cert/server.key >/dev/null
 for _ in $(seq 1 30); do
   pg_isready -h 127.0.0.1 -p "$db_port" -U bootstrap -d preflight >/dev/null 2>&1 && break
